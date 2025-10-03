@@ -1,7 +1,7 @@
 use std::{env, fs, io::Cursor, path::PathBuf};
 
 use anyhow::{bail, Result};
-use paintelf::{elf::ElfContainer, formats::maplink::read_maplink, ReadContext};
+use paintelf::{elf::ElfContainer, formats::maplink::read_maplink, ElfDomain};
 
 fn main() -> Result<()> {
     let input_file_path = env::args().nth(1);
@@ -25,10 +25,10 @@ fn main() -> Result<()> {
         bail!("Could not find section .rela.rodata");
     };
     
-    let reader: Cursor<&[u8]> = Cursor::new(&rodata_section.content);
-    let mut ctx = ReadContext::new(reader, &rodata_section.content, &rodata_relocations, &elf_file.symbols);
+    let mut reader: Cursor<&[u8]> = Cursor::new(&rodata_section.content);
+    let domain = ElfDomain::new(&rodata_section.content, &rodata_relocations, &elf_file.symbols);
     
-    let maplink = read_maplink(&mut ctx)?;
+    let maplink = read_maplink(&mut reader, domain)?;
     let yaml = serde_yaml_bw::to_string(&maplink)?;
     
     let out_path = input_file_path.with_extension("yaml");

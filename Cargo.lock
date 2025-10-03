@@ -136,6 +136,7 @@ dependencies = [
  "indexmap",
  "serde",
  "serde_yaml_bw",
+ "vivibin",
 ]
 
 [[package]]
@@ -239,3 +240,24 @@ name = "unsafe-libyaml-norway"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39abd59bf32521c7f2301b52d05a6a2c975b6003521cbd0c6dc1582f0a22104"
+
+[[package]]
+name = "vivibin"
+version = "0.1.0"
+source = "git+https://github.com/Darxoon/vivibin?rev=5719447#5719447102c1c615381be6bb3757cf78929e4eb9"
+dependencies = [
+ "anyhow",
+ "array-init",
+ "byteorder",
+ "vivibin_derive",
+]
+
+[[package]]
+name = "vivibin_derive"
+version = "0.1.0"
+source = "git+https://github.com/Darxoon/vivibin?rev=5719447#5719447102c1c615381be6bb3757cf78929e4eb9"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]

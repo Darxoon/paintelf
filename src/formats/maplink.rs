@@ -1,21 +1,22 @@
-use std::io::{Seek, SeekFrom};
+use std::io::SeekFrom;
 
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::Serialize;
+use vivibin::{scoped_reader_pos, CanRead, ReadDomainExt, Readable, Reader};
 
-use crate::{formats::FileData, scoped_ctx_pos, ReadContext};
+use crate::{formats::FileData, util::pointer::Pointer, ElfDomain};
 
-pub fn read_maplink<'a>(ctx: &'a mut ReadContext<'a>) -> Result<FileData> {
-    let data_count_symbol = ctx.find_symbol("dataCount__Q3_4data3fld7maplink")?;
-    ctx.reader.seek(SeekFrom::Start(data_count_symbol.offset().into()))?;
-    let data_count = ctx.reader.read_u32::<BigEndian>()?;
+pub fn read_maplink<'a>(reader: &mut impl Reader, domain: ElfDomain) -> Result<FileData> {
+    let data_count_symbol = domain.find_symbol("dataCount__Q3_4data3fld7maplink")?;
+    reader.seek(SeekFrom::Start(data_count_symbol.offset().into()))?;
+    let data_count = reader.read_u32::<BigEndian>()?;
     
-    let datas_symbol = ctx.find_symbol("datas__Q3_4data3fld7maplink")?;
-    ctx.reader.seek(SeekFrom::Start(datas_symbol.offset().into()))?;
+    let datas_symbol = domain.find_symbol("datas__Q3_4data3fld7maplink")?;
+    reader.seek(SeekFrom::Start(datas_symbol.offset().into()))?;
     
     let areas: Vec<MaplinkArea> = (0..data_count)
-        .map(|_| MaplinkArea::from_reader(ctx))
+        .map(|_| MaplinkArea::from_reader(reader, domain))
         .collect::<Result<_>>()?;
     
     Ok(FileData::Maplink(areas))
@@ -27,17 +28,17 @@ pub struct MaplinkArea {
     pub links: Vec<Link>,
 }
 
-impl MaplinkArea {
-    pub fn from_reader<'a, 'b>(ctx: &'a mut ReadContext<'b>) -> Result<Self> {
-        let map_name = ctx.read_string()?;
-        let links_ptr = ctx.read_pointer()?;
-        let link_count = ctx.reader.read_u32::<BigEndian>()?;
+impl<D: CanRead<String> + CanRead<Pointer>> Readable<D> for MaplinkArea {
+    fn from_reader<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
+        let map_name: String = domain.read(reader)?;
+        let links_ptr: Pointer = domain.read(reader)?;
+        let link_count: u32 = domain.read_fallback(reader)?;
         
-        scoped_ctx_pos!(ctx);
-        ctx.reader.seek(SeekFrom::Start(links_ptr.into()))?;
+        scoped_reader_pos!(reader);
+        reader.seek(SeekFrom::Start(links_ptr.into()))?;
         
         let links: Vec<Link> = (0..link_count)
-            .map(|_| Link::from_reader(ctx))
+            .map(|_| Link::from_reader(reader, domain))
             .collect::<Result<_>>()?;
         
         Ok(Self {
@@ -47,8 +48,9 @@ impl MaplinkArea {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Readable, Serialize)]
 pub struct Link {
+    #[require_domain]
     pub id: String,
     pub destination: String,
     pub link_type: String,
@@ -65,42 +67,3 @@ pub struct Link {
     pub field_0x34: String,
     pub field_0x38: String,
 }
-
-impl Link {
-    pub fn from_reader(ctx: &mut ReadContext) -> Result<Self> {
-        let id = ctx.read_string()?;
-        let destination = ctx.read_string()?;
-        let link_type = ctx.read_string()?;
-        let field_0xc = ctx.read_string()?;
-        let field_0x10 = ctx.reader.read_f32::<BigEndian>()?;
-        let field_0x14 = ctx.read_string()?;
-        let field_0x18 = ctx.read_string()?;
-        let field_0x1c = ctx.read_string()?;
-        let field_0x20 = ctx.read_string()?;
-        let field_0x24 = ctx.read_string()?;
-        let field_0x28 = ctx.reader.read_u32::<BigEndian>()?;
-        let field_0x2c = ctx.read_string()?;
-        let field_0x30 = ctx.read_string()?;
-        let field_0x34 = ctx.read_string()?;
-        let field_0x38 = ctx.read_string()?;
-        
-        Ok(Self {
-            id,
-            destination,
-            link_type,
-            field_0xc,
-            field_0x10,
-            field_0x14,
-            field_0x18,
-            field_0x1c,
-            field_0x20,
-            field_0x24,
-            field_0x28,
-            field_0x2c,
-            field_0x30,
-            field_0x34,
-            field_0x38,
-        })
-    }
-}
-
