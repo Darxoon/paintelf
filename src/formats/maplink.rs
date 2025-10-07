@@ -2,12 +2,12 @@ use std::io::SeekFrom;
 
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
-use serde::Serialize;
-use vivibin::{scoped_reader_pos, CanRead, ReadDomainExt, Readable, Reader};
+use serde::{Deserialize, Serialize};
+use vivibin::{scoped_reader_pos, CanRead, CanWrite, ReadDomainExt, Readable, Reader, Writable, WriteCtx, WriteDomain, WriteDomainExt};
 
-use crate::{formats::FileData, util::pointer::Pointer, ElfDomain};
+use crate::{formats::FileData, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain};
 
-pub fn read_maplink<'a>(reader: &mut impl Reader, domain: ElfDomain) -> Result<FileData> {
+pub fn read_maplink<'a>(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<FileData> {
     let data_count_symbol = domain.find_symbol("dataCount__Q3_4data3fld7maplink")?;
     reader.seek(SeekFrom::Start(data_count_symbol.offset().into()))?;
     let data_count = reader.read_u32::<BigEndian>()?;
@@ -22,7 +22,17 @@ pub fn read_maplink<'a>(reader: &mut impl Reader, domain: ElfDomain) -> Result<F
     Ok(FileData::Maplink(areas))
 }
 
-#[derive(Clone, Debug, Serialize)]
+pub fn write_maplink(ctx: &mut impl WriteCtx, domain: ElfWriteDomain, areas: &[MaplinkArea]) -> Result<()> {
+    domain.write_fallback::<u32>(ctx, &(areas.len() as u32))?;
+    
+    for area in areas {
+        area.to_writer(ctx, domain)?;
+    }
+    
+    Ok(())
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MaplinkArea {
     pub map_name: String,
     pub links: Vec<Link>,
@@ -48,7 +58,24 @@ impl<D: CanRead<String> + CanRead<Pointer>> Readable<D> for MaplinkArea {
     }
 }
 
-#[derive(Clone, Debug, Readable, Serialize)]
+impl<D: CanWrite<String>> Writable<D> for MaplinkArea {
+    fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: D) -> Result<()> {
+        domain.write(ctx, &self.map_name)?;
+        
+        let token = ctx.allocate_next_block(|ctx| {
+            for link in &self.links {
+                link.to_writer(ctx, domain)?;
+            }
+            Ok(())
+        })?;
+        ctx.write_token::<4>(token)?;
+        
+        domain.write_fallback::<u32>(ctx, &(self.links.len() as u32))?;
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Readable, Serialize, Deserialize)]
 pub struct Link {
     #[require_domain]
     pub id: String,
@@ -66,4 +93,26 @@ pub struct Link {
     pub enter_function: String,
     pub exit_function: String,
     pub field_0x38: String,
+}
+
+impl<D: WriteDomain> Writable<D> for Link {
+    fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: D) -> Result<()> {
+        // TODO: actual string writing implementation
+        domain.write_fallback::<u32>(ctx, &0)?;
+        domain.write_fallback::<u32>(ctx, &0)?;
+        domain.write_fallback::<u32>(ctx, &0)?;
+        domain.write_fallback::<u32>(ctx, &0)?;
+        domain.write_fallback::<f32>(ctx, &self.player_direction)?;
+        domain.write_fallback::<u32>(ctx, &0)?;
+        domain.write_fallback::<u32>(ctx, &0)?;
+        domain.write_fallback::<u32>(ctx, &0)?;
+        domain.write_fallback::<u32>(ctx, &0)?;
+        domain.write_fallback::<u32>(ctx, &0)?;
+        domain.write_fallback::<u32>(ctx, &self.field_0x28)?;
+        domain.write_fallback::<u32>(ctx, &0)?;
+        domain.write_fallback::<u32>(ctx, &0)?;
+        domain.write_fallback::<u32>(ctx, &0)?;
+        domain.write_fallback::<u32>(ctx, &0)?;
+        Ok(())
+    }
 }

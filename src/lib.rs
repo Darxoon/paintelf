@@ -1,9 +1,9 @@
-use std::{any::TypeId, mem::{self, ManuallyDrop}, ptr};
+use std::{any::TypeId, io::Write, mem::{self, transmute, ManuallyDrop}, ptr};
 
 use anyhow::{anyhow, ensure, Result};
-use byteorder::{BigEndian, ReadBytesExt};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
-use vivibin::{CanRead, EndianSpecific, Endianness, ReadDomain, Reader};
+use vivibin::{CanRead, CanWrite, EndianSpecific, Endianness, ReadDomain, Reader, WriteCtx, WriteDomain, Writer};
 
 use crate::{elf::{Relocation, Symbol}, util::{pointer::Pointer, read_string}};
 
@@ -11,14 +11,16 @@ pub mod elf;
 pub mod formats;
 pub mod util;
 
+const ZEROES: &[u8] = &[0; 128];
+
 #[derive(Clone, Copy)]
-pub struct ElfDomain<'a> {
+pub struct ElfReadDomain<'a> {
     rodata_section: &'a [u8],
     relocations: &'a IndexMap<Pointer, Relocation>,
     symbols: &'a IndexMap<String, Symbol>,
 }
 
-impl<'a> ElfDomain<'a> {
+impl<'a> ElfReadDomain<'a> {
     pub fn new(
         rodata_section: &'a [u8],
         relocations: &'a IndexMap<Pointer, Relocation>,
@@ -61,14 +63,14 @@ impl<'a> ElfDomain<'a> {
     }
 }
 
-impl EndianSpecific for ElfDomain<'_> {
+impl EndianSpecific for ElfReadDomain<'_> {
     fn endianness(self) -> Endianness {
         Endianness::Big
     }
 }
 
 // this should be a macro :/
-impl ReadDomain for ElfDomain<'_> {
+impl ReadDomain for ElfReadDomain<'_> {
     type Pointer = Pointer;
 
     fn read_unk<T: 'static>(self, reader: &mut impl vivibin::Reader) -> Result<Option<T>> {
@@ -103,15 +105,78 @@ impl ReadDomain for ElfDomain<'_> {
     }
 }
 
-impl CanRead<Pointer> for ElfDomain<'_> {
+impl CanRead<Pointer> for ElfReadDomain<'_> {
     fn read(self, reader: &mut impl Reader) -> Result<Pointer> {
         self.read_pointer(reader)
     }
 }
 
-impl CanRead<String> for ElfDomain<'_> {
+impl CanRead<String> for ElfReadDomain<'_> {
     fn read(self, reader: &mut impl Reader) -> Result<String> {
         self.read_string(reader)
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct ElfWriteDomain;
+
+impl EndianSpecific for ElfWriteDomain {
+    fn endianness(self) -> Endianness {
+        Endianness::Big
+    }
+}
+
+impl ElfWriteDomain {
+    pub fn write_string(&self, ctx: &mut impl WriteCtx, value: &str) -> Result<()> {
+        let token = ctx.allocate_next_block(move |ctx| {
+            ctx.write_c_str(value)?;
+            Self::align(ctx, 4)?;
+            Ok(())
+        })?;
+        
+        ctx.write_token::<4>(token)?;
+        Ok(())
+    }
+    
+    // TODO: upstream this into vivibin
+    fn align(ctx: &mut impl WriteCtx, alignment: usize) -> Result<()> {
+        let alignment = alignment as isize;
+        let pos = ctx.position()? as isize;
+        // bonkers alignment formular
+        let padding_size = ((alignment - pos) % alignment + alignment) % alignment;
+        ctx.write(&ZEROES[..padding_size as usize])?;
+        Ok(())
+    }
+    
+    pub fn write_pointer_debug(&self, writer: &mut impl Writer, value: Pointer) -> Result<()> {
+        writer.write_u32::<BigEndian>(value.0 | 0x70000000)?;
+        Ok(())
+    }
+}
+
+impl WriteDomain for ElfWriteDomain {
+    type Pointer = Pointer;
+    type Cat = ();
+
+    fn write_unk<T: 'static>(self, ctx: &mut impl WriteCtx, value: &T) -> Result<Option<()>> {
+        let type_id = TypeId::of::<T>();
+        
+        if type_id == TypeId::of::<String>() {
+            let value = unsafe { transmute::<&T, &String>(value) };
+            self.write_string(ctx, value)?;
+            Ok(Some(()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn apply_reference(self, writer: &mut impl Writer, heap_offset: usize) -> Result<()> {
+        self.write_pointer_debug(writer, Pointer(heap_offset as u32))
+    }
+}
+
+impl CanWrite<String> for ElfWriteDomain {
+    fn write(self, ctx: &mut impl WriteCtx, value: &String) -> Result<()> {
+        self.write_string(ctx, value)
+    }
+}
