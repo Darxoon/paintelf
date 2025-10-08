@@ -93,7 +93,7 @@ fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
                 let mut word: [u8; 4] = Default::default();
                 let bytes_read = reader.read(&mut word)?;
                 assert!(bytes_read == 4 || reader.position() >= rodata_section.content.len() as u64);
-                writer.write_all(&word)?;
+                writer.write_all(&word[..bytes_read])?;
             }
         }
         

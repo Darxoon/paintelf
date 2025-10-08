@@ -147,7 +147,7 @@ impl<'a> ElfWriteDomain<'a> {
         let token = if let Some(token) = existing_token {
             token
         } else {
-            let alignment = if self.prev_string_len.get() <= 2 && value.len() == 1
+            let alignment = if self.prev_string_len.get() <= 2 && value.len() <= 1
                 { 0 } else { 4 };
             self.prev_string_len.set(value.len());
             let new_token = ctx.allocate_next_block_aligned(alignment, move |ctx| {
