@@ -2,7 +2,8 @@ use std::{cell::{Cell, RefCell}, collections::HashMap, env, fs, io::{Cursor, Rea
 
 use anyhow::{anyhow, bail, Result};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use paintelf::{elf::ElfContainer, formats::{maplink::{read_maplink, write_maplink}, FileData}, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain};
+use indexmap::IndexMap;
+use paintelf::{elf::{ElfContainer, Section, Symbol}, formats::{maplink::{read_maplink, write_maplink}, FileData}, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain};
 use vivibin::{WriteCtxImpl, WriteDomainExt};
 
 fn main() -> Result<()> {
@@ -78,28 +79,18 @@ fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
     
     // apply relocations and output the result (debug only)
     if is_debug {
-        let mut reader: Cursor<&[u8]> = Cursor::new(&rodata_section.content);
-        let mut writer: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+        let write_section_debug: _ = |section_name: &str| -> Result<()> {
+            let section = &elf_file.sections[section_name];
+            let out_section: Vec<u8> = get_section_linked(section, &elf_file.symbols)?;
+            let out_path = input_file_path.with_extension(section_name.strip_prefix(".").unwrap_or(section_name));
+            fs::write(out_path, &out_section)?;
+            println!("Wrote section '{section_name}' with potential relocations applied");
+            Ok(())
+        };
         
-        while reader.position() < rodata_section.content.len() as u64 {
-            if let Some(relocation) = rodata_relocations.get(&Pointer::current(&mut reader)?) {
-                let symbol = elf_file.symbols.get_index((relocation.info >> 8) as usize)
-                    .ok_or_else(|| anyhow!("Could not find symbol at index {}", relocation.info >> 8))?
-                    .1;
-                
-                writer.write_u32::<BigEndian>(symbol.offset() | 0x70000000)?;
-                assert_eq!(reader.read_u32::<BigEndian>()?, 0);
-            } else {
-                let mut word: [u8; 4] = Default::default();
-                let bytes_read = reader.read(&mut word)?;
-                assert!(bytes_read == 4 || reader.position() >= rodata_section.content.len() as u64);
-                writer.write_all(&word[..bytes_read])?;
-            }
-        }
-        
-        let out_path = input_file_path.with_extension("rodata");
-        fs::write(out_path, writer.get_ref())?;
-        println!("Wrote .rodata with relocations applied");
+        write_section_debug(".rodata")?;
+        write_section_debug(".rela.rodata")?;
+        write_section_debug(".symtab")?;
     }
     
     // parse maplink file
@@ -112,4 +103,32 @@ fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
     let out_path = input_file_path.with_extension("yaml");
     fs::write(out_path, yaml)?;
     Ok(())
+}
+
+fn get_section_linked(section: &Section, symbols: &IndexMap<String, Symbol>) -> Result<Vec<u8>> {
+    let mut writer: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+    
+    if let Some(relocations) = section.relocations.as_ref() {
+        let mut reader: Cursor<&[u8]> = Cursor::new(&section.content);
+        
+        while reader.position() < section.content.len() as u64 {
+            if let Some(relocation) = relocations.get(&Pointer::current(&mut reader)?) {
+                let symbol = symbols.get_index((relocation.info >> 8) as usize)
+                    .ok_or_else(|| anyhow!("Could not find symbol at index {}", relocation.info >> 8))?
+                    .1;
+                
+                writer.write_u32::<BigEndian>(symbol.offset() | 0x70000000)?;
+                assert_eq!(reader.read_u32::<BigEndian>()?, 0);
+            } else {
+                let mut word: [u8; 4] = Default::default();
+                let bytes_read = reader.read(&mut word)?;
+                assert!(bytes_read == 4 || reader.position() >= section.content.len() as u64);
+                writer.write_all(&word[..bytes_read])?;
+            }
+        }
+    } else {
+        writer.write_all(&section.content)?;
+    }
+    
+    Ok(writer.into_inner())
 }

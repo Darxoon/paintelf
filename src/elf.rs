@@ -78,12 +78,11 @@ impl ElfContainer {
                 let original_section: &mut Section = sections.get_mut(&name[5..])
                     .ok_or_else(|| anyhow!("Could not find section {}", &name[5..]))?;
                 original_section.relocations = Some(relocations);
-                continue;
             }
             
             match name.as_str() {
                 ".strtab" => {
-                    string_table = Some(section.content);
+                    string_table = Some(section.content.clone());
                 },
                 ".symtab" => {
                     let mut reader = Cursor::new(section.content.as_slice());
@@ -95,10 +94,10 @@ impl ElfContainer {
                     
                     symbol_headers = Some(symtab);
                 },
-                _ => {
-                    sections.insert(name, section);
-                },
+                _ => {},
             }
+            
+            sections.insert(name, section);
         }
         
         let Some(string_table) = string_table else {
