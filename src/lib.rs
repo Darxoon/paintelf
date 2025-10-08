@@ -115,9 +115,24 @@ impl CanRead<String> for ElfReadDomain<'_> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum SymbolName {
+    None,
+    Private(char),
+    Unmangled(String),
+}
+
+#[derive(Clone, Debug)]
+pub struct SymbolDeclaration {
+    pub name: SymbolName,
+    pub offset: HeapToken,
+    pub size: u32,
+}
+
 #[derive(Clone, Copy)]
 pub struct ElfWriteDomain<'a> {
     string_map: &'a RefCell<HashMap<String, HeapToken>>,
+    symbol_declarations: &'a RefCell<IndexMap<HeapToken, SymbolDeclaration>>,
     prev_string_len: &'a Cell<usize>,
 }
 
@@ -128,14 +143,19 @@ impl EndianSpecific for ElfWriteDomain<'_> {
 }
 
 impl<'a> ElfWriteDomain<'a> {
-    pub fn new(string_map: &'a RefCell<HashMap<String, HeapToken>>, prev_string_len: &'a Cell<usize>) -> Self {
+    pub fn new(
+        string_map: &'a RefCell<HashMap<String, HeapToken>>,
+        symbol_declarations: &'a RefCell<IndexMap<HeapToken, SymbolDeclaration>>,
+        prev_string_len: &'a Cell<usize>,
+    ) -> Self {
         Self {
             string_map,
+            symbol_declarations,
             prev_string_len,
         }
     }
     
-    pub fn write_string(&self, ctx: &mut impl WriteCtx, value: &str) -> Result<()> {
+    pub fn write_string(self, ctx: &mut impl WriteCtx, value: &str) -> Result<()> {
         // Search for if this string has already been written before
         // TODO: account for substrings (use crate memchr?)
         let existing_token = if ctx.position()? < 0xc32c { 
@@ -162,7 +182,11 @@ impl<'a> ElfWriteDomain<'a> {
         Ok(())
     }
     
-    pub fn write_pointer_debug(&self, writer: &mut impl Writer, value: Pointer) -> Result<()> {
+    pub fn put_symbol(self, token: HeapToken, symbol: SymbolDeclaration) {
+        self.symbol_declarations.borrow_mut().insert(token, symbol);
+    }
+    
+    pub fn write_pointer_debug(self, writer: &mut impl Writer, value: Pointer) -> Result<()> {
         writer.write_u32::<BigEndian>(value.0 | 0x70000000)?;
         Ok(())
     }
@@ -192,5 +216,13 @@ impl WriteDomain for ElfWriteDomain<'_> {
 impl CanWrite<String> for ElfWriteDomain<'_> {
     fn write(self, ctx: &mut impl WriteCtx, value: &String) -> Result<()> {
         self.write_string(ctx, value)
+    }
+}
+
+// TODO: this sucks
+impl CanWrite<SymbolDeclaration> for ElfWriteDomain<'_> {
+    fn write(self, _: &mut impl WriteCtx, value: &SymbolDeclaration) -> Result<()> {
+        self.put_symbol(value.offset, value.clone());
+        Ok(())
     }
 }

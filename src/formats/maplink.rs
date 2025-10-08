@@ -5,7 +5,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{scoped_reader_pos, CanRead, CanWrite, ReadDomainExt, Readable, Reader, Writable, WriteCtx, WriteDomainExt, Writer};
 
-use crate::{formats::FileData, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain};
+use crate::{formats::FileData, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, SymbolDeclaration, SymbolName};
 
 pub fn read_maplink<'a>(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<FileData> {
     let data_count_symbol = domain.find_symbol("dataCount__Q3_4data3fld7maplink")?;
@@ -58,23 +58,42 @@ impl<D: CanRead<String> + CanRead<Pointer>> Readable<D> for MaplinkArea {
     }
 }
 
-impl<D: CanWrite<String>> Writable<D> for MaplinkArea {
+impl<D: CanWrite<String> + CanWrite<SymbolDeclaration>> Writable<D> for MaplinkArea {
     fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: D) -> Result<()> {
         // TODO: this is a hack, figure out string serialization order better
         // domain.write(ctx, &self.map_name)?;
-        let token = ctx.allocate_next_block_aligned(4, move |ctx| {
+        let mut name_size: usize = 0;
+        let token = ctx.allocate_next_block_aligned(4, |ctx| {
+            let start_pos = ctx.position()? as usize;
             ctx.write_c_str(&self.map_name)?;
+            name_size = ctx.position()? as usize - start_pos;
             Ok(())
         })?;
         ctx.write_token::<4>(token)?;
+        domain.write(ctx, &SymbolDeclaration {
+            name: SymbolName::Private('.'),
+            offset: token,
+            size: name_size as u32,
+        })?;
         
+        let mut links_size: usize = 0;
         let token = ctx.allocate_next_block_aligned(4, |ctx| {
+            let start_pos = ctx.position()? as usize;
             for link in &self.links {
                 link.to_writer(ctx, domain)?;
             }
+            links_size = ctx.position()? as usize - start_pos;
             Ok(())
         })?;
         ctx.write_token::<4>(token)?;
+        domain.write(ctx, &SymbolDeclaration {
+            name: match self.map_name.chars().next() {
+                Some(initial_char) => SymbolName::Private(initial_char),
+                None => SymbolName::None,
+            },
+            offset: token,
+            size: name_size as u32,
+        })?;
         
         domain.write_fallback::<u32>(ctx, &(self.links.len() as u32))?;
         Ok(())

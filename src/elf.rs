@@ -188,7 +188,7 @@ pub struct Relocation {
     pub addend: u32,
 }
 
-#[derive(Debug, Clone, BinRead, BinWrite)]
+#[derive(Debug, Clone, Default, BinRead, BinWrite)]
 #[brw(big)]
 pub struct SymbolHeader {
     pub st_name: u32,

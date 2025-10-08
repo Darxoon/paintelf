@@ -10,4 +10,4 @@ byteorder = "1.5.0"
 indexmap = "2.11.4"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_yaml_bw = "2.4.0"
-vivibin = { git = "https://github.com/Darxoon/vivibin", rev = "ba009613" }
+vivibin = { git = "https://github.com/Darxoon/vivibin", rev = "81e8ad13" }

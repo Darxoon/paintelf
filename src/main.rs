@@ -1,10 +1,11 @@
 use std::{cell::{Cell, RefCell}, collections::HashMap, env, fs, io::{Cursor, Read, Write}, path::{Path, PathBuf}, process::exit};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Error, Result};
+use binrw::BinWrite;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
-use paintelf::{elf::{ElfContainer, Section, Symbol}, formats::{maplink::{read_maplink, write_maplink}, FileData}, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain};
-use vivibin::{WriteCtxImpl, WriteDomainExt};
+use paintelf::{elf::{ElfContainer, Section, Symbol, SymbolHeader}, formats::{maplink::{read_maplink, write_maplink}, FileData}, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, SymbolDeclaration, SymbolName};
+use vivibin::{HeapToken, WriteCtxImpl, WriteDomainExt};
 
 fn main() -> Result<()> {
     let argv = env::args().collect::<Vec<_>>();
@@ -43,15 +44,17 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     let input_file = fs::read_to_string(input_file_path)?;
     let data: FileData = serde_yaml_bw::from_str(&input_file)?;
     
-    let result_buffer: Vec<u8> = match data {
+    let (result_buffer, symbol_declarations) = match data {
         FileData::Maplink(maplink_areas) => {
             let string_map = RefCell::new(HashMap::new());
+            let symbol_declarations = RefCell::new(IndexMap::new());
             let prev_string_len = Cell::new(0);
-            let domain = ElfWriteDomain::new(&string_map, &prev_string_len);
+            let domain = ElfWriteDomain::new(&string_map, &symbol_declarations, &prev_string_len);
             
             let mut ctx: WriteCtxImpl<ElfWriteDomain> = ElfWriteDomain::new_ctx();
             write_maplink(&mut ctx, domain, &maplink_areas)?;
-            ctx.to_buffer(domain)?
+            
+            (ctx.to_buffer(domain)?, symbol_declarations.into_inner())
         },
     };
     
@@ -61,8 +64,50 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     base_name.push("_serialized.rodata");
     let out_path = input_file_path.with_file_name(base_name);
     
+    write_symtab(&out_path, &symbol_declarations)?;
+    
     fs::write(&out_path, &result_buffer)?;
     Ok(())
+}
+
+fn write_symtab(out_path: &Path, symbol_declarations: &IndexMap<HeapToken, SymbolDeclaration>) -> Result<()> {
+    let mut writer = Cursor::new(Vec::new());
+    
+    // null
+    BinWrite::write(&SymbolHeader::default(), &mut writer)?;
+    // data_fld_maplink.cpp
+    BinWrite::write(&SymbolHeader {
+        st_name: 1,
+        st_value: 0,
+        st_size: 0,
+        st_info: 4,
+        st_other: 0,
+        st_shndx: 0xFFF1,
+    }, &mut writer)?;
+    // .rodata
+    BinWrite::write(&SymbolHeader {
+        st_name: 0,
+        st_value: 0,
+        st_size: 0,
+        st_info: 3,
+        st_other: 0,
+        st_shndx: 1,
+    }, &mut writer)?;
+    
+    for (token, symbol) in symbol_declarations {
+        BinWrite::write(&SymbolHeader {
+            st_name: 0,
+            st_value: 0,
+            st_size: symbol.size,
+            st_info: 1,
+            st_other: 0,
+            st_shndx: 1,
+        }, &mut writer)?;
+    }
+    
+    let out_symtab: Vec<u8> = writer.into_inner();
+    let out_path = out_path.with_extension("symtab");
+    fs::write(&out_path, &out_symtab).map_err(Error::from)
 }
 
 fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
