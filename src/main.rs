@@ -1,4 +1,4 @@
-use std::{env, fs, io::{Cursor, Read, Write}, path::{Path, PathBuf}, process::exit};
+use std::{cell::{Cell, RefCell}, collections::HashMap, env, fs, io::{Cursor, Read, Write}, path::{Path, PathBuf}, process::exit};
 
 use anyhow::{anyhow, bail, Result};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -44,9 +44,13 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     
     let result_buffer: Vec<u8> = match data {
         FileData::Maplink(maplink_areas) => {
+            let string_map = RefCell::new(HashMap::new());
+            let prev_string_len = Cell::new(0);
+            let domain = ElfWriteDomain::new(&string_map, &prev_string_len);
+            
             let mut ctx: WriteCtxImpl<ElfWriteDomain> = ElfWriteDomain::new_ctx();
-            write_maplink(&mut ctx, ElfWriteDomain, &maplink_areas)?;
-            ctx.to_buffer(ElfWriteDomain)?
+            write_maplink(&mut ctx, domain, &maplink_areas)?;
+            ctx.to_buffer(domain)?
         },
     };
     

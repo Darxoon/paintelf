@@ -244,7 +244,7 @@ checksum = "b39abd59bf32521c7f2301b52d05a6a2c975b6003521cbd0c6dc1582f0a22104"
 [[package]]
 name = "vivibin"
 version = "0.1.0"
-source = "git+https://github.com/Darxoon/vivibin?rev=a6072f60#a6072f606c9d23df76abaa4c3c55b755f329744d"
+source = "git+https://github.com/Darxoon/vivibin?rev=ba009613#ba0096138ec25f46db704d0e0d4553b5922cbdbe"
 dependencies = [
  "anyhow",
  "array-init",
@@ -255,7 +255,7 @@ dependencies = [
 [[package]]
 name = "vivibin_derive"
 version = "0.1.0"
-source = "git+https://github.com/Darxoon/vivibin?rev=a6072f60#a6072f606c9d23df76abaa4c3c55b755f329744d"
+source = "git+https://github.com/Darxoon/vivibin?rev=ba009613#ba0096138ec25f46db704d0e0d4553b5922cbdbe"
 dependencies = [
  "proc-macro2",
  "quote",

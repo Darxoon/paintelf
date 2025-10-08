@@ -3,7 +3,7 @@ use std::io::SeekFrom;
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
-use vivibin::{scoped_reader_pos, CanRead, CanWrite, ReadDomainExt, Readable, Reader, Writable, WriteCtx, WriteDomain, WriteDomainExt};
+use vivibin::{scoped_reader_pos, CanRead, CanWrite, ReadDomainExt, Readable, Reader, Writable, WriteCtx, WriteDomainExt, Writer};
 
 use crate::{formats::FileData, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain};
 
@@ -60,9 +60,15 @@ impl<D: CanRead<String> + CanRead<Pointer>> Readable<D> for MaplinkArea {
 
 impl<D: CanWrite<String>> Writable<D> for MaplinkArea {
     fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: D) -> Result<()> {
-        domain.write(ctx, &self.map_name)?;
+        // TODO: this is a hack, figure out string serialization order better
+        // domain.write(ctx, &self.map_name)?;
+        let token = ctx.allocate_next_block_aligned(4, move |ctx| {
+            ctx.write_c_str(&self.map_name)?;
+            Ok(())
+        })?;
+        ctx.write_token::<4>(token)?;
         
-        let token = ctx.allocate_next_block(|ctx| {
+        let token = ctx.allocate_next_block_aligned(4, |ctx| {
             for link in &self.links {
                 link.to_writer(ctx, domain)?;
             }
@@ -95,24 +101,24 @@ pub struct Link {
     pub field_0x38: String,
 }
 
-impl<D: WriteDomain> Writable<D> for Link {
+impl<D: CanWrite<String>> Writable<D> for Link {
     fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: D) -> Result<()> {
         // TODO: actual string writing implementation
-        domain.write_fallback::<u32>(ctx, &0)?;
-        domain.write_fallback::<u32>(ctx, &0)?;
-        domain.write_fallback::<u32>(ctx, &0)?;
-        domain.write_fallback::<u32>(ctx, &0)?;
+        domain.write(ctx, &self.id)?;
+        domain.write(ctx, &self.destination)?;
+        domain.write(ctx, &self.link_type)?;
+        domain.write(ctx, &self.zone_id)?;
         domain.write_fallback::<f32>(ctx, &self.player_direction)?;
-        domain.write_fallback::<u32>(ctx, &0)?;
-        domain.write_fallback::<u32>(ctx, &0)?;
-        domain.write_fallback::<u32>(ctx, &0)?;
-        domain.write_fallback::<u32>(ctx, &0)?;
-        domain.write_fallback::<u32>(ctx, &0)?;
+        domain.write(ctx, &self.player_facing)?;
+        domain.write(ctx, &self.door_type)?;
+        domain.write(ctx, &self.field_0x1c)?;
+        domain.write(ctx, &self.pipe_cam_script_enter)?;
+        domain.write(ctx, &self.pipe_cam_script_exit)?;
         domain.write_fallback::<u32>(ctx, &self.field_0x28)?;
-        domain.write_fallback::<u32>(ctx, &0)?;
-        domain.write_fallback::<u32>(ctx, &0)?;
-        domain.write_fallback::<u32>(ctx, &0)?;
-        domain.write_fallback::<u32>(ctx, &0)?;
+        domain.write(ctx, &self.field_0x2c)?;
+        domain.write(ctx, &self.enter_function)?;
+        domain.write(ctx, &self.exit_function)?;
+        domain.write(ctx, &self.field_0x38)?;
         Ok(())
     }
 }

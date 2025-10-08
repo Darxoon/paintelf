@@ -1,17 +1,15 @@
-use std::{any::TypeId, io::Write, mem::{self, transmute, ManuallyDrop}, ptr};
+use std::{any::TypeId, cell::{Cell, RefCell}, collections::HashMap, mem::{self, transmute, ManuallyDrop}, ptr};
 
 use anyhow::{anyhow, ensure, Result};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
-use vivibin::{CanRead, CanWrite, EndianSpecific, Endianness, ReadDomain, Reader, WriteCtx, WriteDomain, Writer};
+use vivibin::{CanRead, CanWrite, EndianSpecific, Endianness, HeapToken, ReadDomain, Reader, WriteCtx, WriteDomain, Writer};
 
 use crate::{elf::{Relocation, Symbol}, util::{pointer::Pointer, read_string}};
 
 pub mod elf;
 pub mod formats;
 pub mod util;
-
-const ZEROES: &[u8] = &[0; 128];
 
 #[derive(Clone, Copy)]
 pub struct ElfReadDomain<'a> {
@@ -118,33 +116,49 @@ impl CanRead<String> for ElfReadDomain<'_> {
 }
 
 #[derive(Clone, Copy)]
-pub struct ElfWriteDomain;
+pub struct ElfWriteDomain<'a> {
+    string_map: &'a RefCell<HashMap<String, HeapToken>>,
+    prev_string_len: &'a Cell<usize>,
+}
 
-impl EndianSpecific for ElfWriteDomain {
+impl EndianSpecific for ElfWriteDomain<'_> {
     fn endianness(self) -> Endianness {
         Endianness::Big
     }
 }
 
-impl ElfWriteDomain {
-    pub fn write_string(&self, ctx: &mut impl WriteCtx, value: &str) -> Result<()> {
-        let token = ctx.allocate_next_block(move |ctx| {
-            ctx.write_c_str(value)?;
-            Self::align(ctx, 4)?;
-            Ok(())
-        })?;
-        
-        ctx.write_token::<4>(token)?;
-        Ok(())
+impl<'a> ElfWriteDomain<'a> {
+    pub fn new(string_map: &'a RefCell<HashMap<String, HeapToken>>, prev_string_len: &'a Cell<usize>) -> Self {
+        Self {
+            string_map,
+            prev_string_len,
+        }
     }
     
-    // TODO: upstream this into vivibin
-    fn align(ctx: &mut impl WriteCtx, alignment: usize) -> Result<()> {
-        let alignment = alignment as isize;
-        let pos = ctx.position()? as isize;
-        // bonkers alignment formular
-        let padding_size = ((alignment - pos) % alignment + alignment) % alignment;
-        ctx.write(&ZEROES[..padding_size as usize])?;
+    pub fn write_string(&self, ctx: &mut impl WriteCtx, value: &str) -> Result<()> {
+        // Search for if this string has already been written before
+        // TODO: account for substrings (use crate memchr?)
+        let existing_token = if ctx.position()? < 0xc32c { 
+            self.string_map.borrow().get(value).copied()
+        } else {
+            None
+        };
+        
+        let token = if let Some(token) = existing_token {
+            token
+        } else {
+            let alignment = if self.prev_string_len.get() <= 2 && value.len() == 1
+                { 0 } else { 4 };
+            self.prev_string_len.set(value.len());
+            let new_token = ctx.allocate_next_block_aligned(alignment, move |ctx| {
+                ctx.write_c_str(value)?;
+                Ok(())
+            })?;
+            self.string_map.borrow_mut().insert(value.to_string(), new_token);
+            new_token
+        };
+        
+        ctx.write_token::<4>(token)?;
         Ok(())
     }
     
@@ -154,7 +168,7 @@ impl ElfWriteDomain {
     }
 }
 
-impl WriteDomain for ElfWriteDomain {
+impl WriteDomain for ElfWriteDomain<'_> {
     type Pointer = Pointer;
     type Cat = ();
 
@@ -175,7 +189,7 @@ impl WriteDomain for ElfWriteDomain {
     }
 }
 
-impl CanWrite<String> for ElfWriteDomain {
+impl CanWrite<String> for ElfWriteDomain<'_> {
     fn write(self, ctx: &mut impl WriteCtx, value: &String) -> Result<()> {
         self.write_string(ctx, value)
     }
