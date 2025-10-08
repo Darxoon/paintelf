@@ -4,7 +4,11 @@ use anyhow::{anyhow, bail, Error, Result};
 use binrw::BinWrite;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
-use paintelf::{elf::{ElfContainer, Section, Symbol, SymbolHeader}, formats::{maplink::{read_maplink, write_maplink}, FileData}, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, SymbolDeclaration, SymbolName};
+use paintelf::{
+    elf::{ElfContainer, Section, Symbol, SymbolHeader},
+    formats::{maplink::{read_maplink, write_maplink}, FileData},
+    util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, SymbolDeclaration,
+};
 use vivibin::{HeapToken, WriteCtxImpl, WriteDomainExt};
 
 fn main() -> Result<()> {
@@ -44,7 +48,9 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     let input_file = fs::read_to_string(input_file_path)?;
     let data: FileData = serde_yaml_bw::from_str(&input_file)?;
     
-    let (result_buffer, symbol_declarations) = match data {
+    let mut block_offsets = Vec::new();
+    
+    let (result_buffer, mut symbol_declarations) = match data {
         FileData::Maplink(maplink_areas) => {
             let string_map = RefCell::new(HashMap::new());
             let symbol_declarations = RefCell::new(IndexMap::new());
@@ -54,7 +60,7 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
             let mut ctx: WriteCtxImpl<ElfWriteDomain> = ElfWriteDomain::new_ctx();
             write_maplink(&mut ctx, domain, &maplink_areas)?;
             
-            (ctx.to_buffer(domain)?, symbol_declarations.into_inner())
+            (ctx.to_buffer(domain, Some(&mut block_offsets))?, symbol_declarations.into_inner())
         },
     };
     
@@ -64,13 +70,17 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     base_name.push("_serialized.rodata");
     let out_path = input_file_path.with_file_name(base_name);
     
-    write_symtab(&out_path, &symbol_declarations)?;
+    write_symtab(&out_path, &block_offsets, &mut symbol_declarations)?;
     
     fs::write(&out_path, &result_buffer)?;
     Ok(())
 }
 
-fn write_symtab(out_path: &Path, symbol_declarations: &IndexMap<HeapToken, SymbolDeclaration>) -> Result<()> {
+fn write_symtab(
+    out_path: &Path,
+    block_offsets: &[usize],
+    symbol_declarations: &mut IndexMap<HeapToken, SymbolDeclaration>
+) -> Result<()> {
     let mut writer = Cursor::new(Vec::new());
     
     // null
@@ -94,10 +104,16 @@ fn write_symtab(out_path: &Path, symbol_declarations: &IndexMap<HeapToken, Symbo
         st_shndx: 1,
     }, &mut writer)?;
     
+    let _named_symbols: Vec<(HeapToken, SymbolDeclaration)> = symbol_declarations
+        .extract_if(.., |_, symbol| !symbol.name.is_internal())
+        .collect::<Vec<_>>();
+    
+    symbol_declarations.sort_by_key(|_, symbol| symbol.offset.resolve(block_offsets));
+    
     for (token, symbol) in symbol_declarations {
         BinWrite::write(&SymbolHeader {
             st_name: 0,
-            st_value: 0,
+            st_value: token.resolve(block_offsets) as u32,
             st_size: symbol.size,
             st_info: 1,
             st_other: 0,

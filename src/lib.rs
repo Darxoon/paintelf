@@ -118,8 +118,19 @@ impl CanRead<String> for ElfReadDomain<'_> {
 #[derive(Clone, Debug)]
 pub enum SymbolName {
     None,
-    Private(char),
+    Internal(char),
+    InternalNamed(String),
     Unmangled(String),
+}
+
+impl SymbolName {
+    pub fn is_internal(&self) -> bool {
+        match self {
+            SymbolName::Internal(_) => true,
+            SymbolName::InternalNamed(_) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -183,7 +194,20 @@ impl<'a> ElfWriteDomain<'a> {
     }
     
     pub fn put_symbol(self, token: HeapToken, symbol: SymbolDeclaration) {
-        self.symbol_declarations.borrow_mut().insert(token, symbol);
+        let SymbolDeclaration { name, offset, size } = symbol;
+        
+        let name = match name {
+            SymbolName::Internal(initial_char) => {
+                SymbolName::InternalNamed(format!("{initial_char}123"))
+            },
+            other => other,
+        };
+        
+        self.symbol_declarations.borrow_mut().insert(token, SymbolDeclaration {
+            name,
+            offset,
+            size,
+        });
     }
     
     pub fn write_pointer_debug(self, writer: &mut impl Writer, value: Pointer) -> Result<()> {

@@ -1,9 +1,9 @@
-use std::io::SeekFrom;
+use std::{io::SeekFrom, mem};
 
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
-use vivibin::{scoped_reader_pos, CanRead, CanWrite, ReadDomainExt, Readable, Reader, Writable, WriteCtx, WriteDomainExt, Writer};
+use vivibin::{scoped_reader_pos, CanRead, CanWrite, HeapToken, ReadDomainExt, Readable, Reader, Writable, WriteCtx, WriteDomainExt, Writer};
 
 use crate::{formats::FileData, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, SymbolDeclaration, SymbolName};
 
@@ -25,9 +25,24 @@ pub fn read_maplink<'a>(reader: &mut impl Reader, domain: ElfReadDomain) -> Resu
 pub fn write_maplink(ctx: &mut impl WriteCtx, domain: ElfWriteDomain, areas: &[MaplinkArea]) -> Result<()> {
     domain.write_fallback::<u32>(ctx, &(areas.len() as u32))?;
     
+    let areas_start = ctx.position()?;
+    
     for area in areas {
         area.to_writer(ctx, domain)?;
     }
+    
+    let areas_size = ctx.position()? - areas_start;
+    
+    domain.put_symbol(unsafe { mem::transmute(0u64) }, SymbolDeclaration {
+        name: SymbolName::Unmangled("dataCount__Q3_4data3fld7maplink".to_string()),
+        offset: unsafe { mem::transmute(0u64) },
+        size: 4,
+    });
+    domain.put_symbol(unsafe { mem::transmute(0u64) }, SymbolDeclaration {
+        name: SymbolName::Unmangled("datas__Q3_4data3fld7maplink".to_string()),
+        offset: unsafe { mem::transmute(0u64) },
+        size: areas_size as u32,
+    });
     
     Ok(())
 }
@@ -71,7 +86,7 @@ impl<D: CanWrite<String> + CanWrite<SymbolDeclaration>> Writable<D> for MaplinkA
         })?;
         ctx.write_token::<4>(token)?;
         domain.write(ctx, &SymbolDeclaration {
-            name: SymbolName::Private('.'),
+            name: SymbolName::Internal('.'),
             offset: token,
             size: name_size as u32,
         })?;
@@ -88,11 +103,11 @@ impl<D: CanWrite<String> + CanWrite<SymbolDeclaration>> Writable<D> for MaplinkA
         ctx.write_token::<4>(token)?;
         domain.write(ctx, &SymbolDeclaration {
             name: match self.map_name.chars().next() {
-                Some(initial_char) => SymbolName::Private(initial_char),
+                Some(initial_char) => SymbolName::Internal(initial_char),
                 None => SymbolName::None,
             },
             offset: token,
-            size: name_size as u32,
+            size: links_size as u32,
         })?;
         
         domain.write_fallback::<u32>(ctx, &(self.links.len() as u32))?;
