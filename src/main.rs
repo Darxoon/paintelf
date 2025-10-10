@@ -1,13 +1,13 @@
-use std::{cell::{Cell, RefCell}, collections::HashMap, env, fs, io::{Cursor, Read, Write}, path::{Path, PathBuf}, process::exit};
+use std::{cell::{Cell, RefCell}, cmp::Ordering, collections::HashMap, env, fs, io::{Cursor, Read, Write}, path::{Path, PathBuf}, process::exit};
 
 use anyhow::{anyhow, bail, Error, Result};
 use binrw::BinWrite;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use paintelf::{
-    elf::{ElfContainer, Section, Symbol, SymbolHeader},
+    elf::{ElfContainer, Section, Symbol, SymbolHeader, SymbolNameGenerator},
     formats::{maplink::{read_maplink, write_maplink}, FileData},
-    util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, SymbolDeclaration,
+    util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, SymbolDeclaration, SymbolName,
 };
 use vivibin::{HeapToken, WriteCtxImpl, WriteDomainExt};
 
@@ -83,6 +83,85 @@ fn write_symtab(
 ) -> Result<()> {
     let mut writer = Cursor::new(Vec::new());
     
+    // name unnamed internal symbols
+    {
+        let mut symbol_name_gen = SymbolNameGenerator::new();
+        
+        for symbol in symbol_declarations.values_mut() {
+            if let SymbolName::Internal(initial_char) = symbol.name {
+                let tail = symbol_name_gen.next();
+                
+                let mut name = String::with_capacity(tail.len() + 1);
+                name.push(initial_char);
+                name.push_str(tail);
+                
+                symbol.name = SymbolName::InternalUnmangled(name);
+            }
+        }
+    }
+    
+    // name named internal symbols
+    {
+        let mut symbol_name_gen = SymbolNameGenerator::new();
+        
+        let mut symbols: Vec<&mut SymbolDeclaration> = symbol_declarations
+            .values_mut()
+            .filter(|symbol| matches!(symbol.name, SymbolName::InternalNamed(_)))
+            .collect::<Vec<_>>();
+        
+        symbols.sort_by(|a, b| {
+            let SymbolName::InternalNamed(name1) = &a.name else {
+                unreachable!();
+            };
+            let SymbolName::InternalNamed(name2) = &b.name else {
+                unreachable!();
+            };
+            
+            fn is_less_special(a: &str, b: &str) -> bool {
+                let a_bytes = a.as_bytes();
+                let b_bytes = b.as_bytes();
+                
+                if a_bytes.len() == b_bytes.len() || !a_bytes.starts_with(b_bytes) {
+                    return false;
+                }
+                
+                // SAFETY: Assuming b is valid utf8, it does not end on a continuation byte,
+                // so the first b bytes of a also don't. Therefore, this slice does not start
+                // in the middle of a codepoint and assuming a is valid, this slice is too.
+                let tail = unsafe { str::from_utf8_unchecked(&a_bytes[b_bytes.len()..]) };
+                let first_char = tail.chars().next().unwrap();
+                
+                // wtf??
+                first_char < 'P'
+            }
+            
+            if is_less_special(name1, name2) {
+                Ordering::Less
+            } else if is_less_special(name2, name1) {
+                Ordering::Greater
+            } else {
+                name1.cmp(name2)
+            }
+        });
+        
+        for symbol in symbols {
+            let SymbolName::InternalNamed(name) = &symbol.name else {
+                unreachable!();
+            };
+            
+            let initial_char = name.chars().next().unwrap();
+            let tail = symbol_name_gen.next();
+            
+            let mut result = String::with_capacity(tail.len() + 1);
+            result.push(initial_char);
+            result.push_str(tail);
+            
+            // println!("{name} {result}");
+            
+            symbol.name = SymbolName::InternalUnmangled(result);
+        }
+    }
+    
     // null
     BinWrite::write(&SymbolHeader::default(), &mut writer)?;
     // data_fld_maplink.cpp
@@ -110,9 +189,23 @@ fn write_symtab(
     
     symbol_declarations.sort_by_key(|_, symbol| symbol.offset.resolve(block_offsets));
     
+    let mut strtab = Cursor::new(Vec::new());
+    strtab.write(b"\0data_fld_maplink.cpp\0")?;
+    
     for (token, symbol) in symbol_declarations {
+        // serialize name
+        let name_ptr = if let Some(symbol_name) = symbol.name.as_str() {
+            let name_ptr = Pointer::current(&mut strtab)?;
+            strtab.write(symbol_name.as_bytes())?;
+            strtab.write_u8(0)?;
+            name_ptr.into()
+        } else {
+            0u32
+        };
+        
+        // serialize symbol
         BinWrite::write(&SymbolHeader {
-            st_name: 0,
+            st_name: name_ptr,
             st_value: token.resolve(block_offsets) as u32,
             st_size: symbol.size,
             st_info: 1,
@@ -123,7 +216,12 @@ fn write_symtab(
     
     let out_symtab: Vec<u8> = writer.into_inner();
     let out_path = out_path.with_extension("symtab");
-    fs::write(&out_path, &out_symtab).map_err(Error::from)
+    fs::write(&out_path, &out_symtab).map_err(Error::from)?;
+    
+    let out_strtab: Vec<u8> = strtab.into_inner();
+    let out_path = out_path.with_extension("strtab");
+    fs::write(&out_path, &out_strtab).map_err(Error::from)?;
+    Ok(())
 }
 
 fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
@@ -152,6 +250,7 @@ fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
         write_section_debug(".rodata")?;
         write_section_debug(".rela.rodata")?;
         write_section_debug(".symtab")?;
+        write_section_debug(".strtab")?;
     }
     
     // parse maplink file

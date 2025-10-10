@@ -1,4 +1,4 @@
-use std::{any::TypeId, cell::{Cell, RefCell}, collections::HashMap, mem::{self, transmute, ManuallyDrop}, ptr};
+use std::{any::TypeId, cell::{Cell, RefCell}, collections::HashMap, fmt::Display, mem::{self, transmute, ManuallyDrop}, ptr};
 
 use anyhow::{anyhow, ensure, Result};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -120,6 +120,7 @@ pub enum SymbolName {
     None,
     Internal(char),
     InternalNamed(String),
+    InternalUnmangled(String),
     Unmangled(String),
 }
 
@@ -128,7 +129,30 @@ impl SymbolName {
         match self {
             SymbolName::Internal(_) => true,
             SymbolName::InternalNamed(_) => true,
+            SymbolName::InternalUnmangled(_) => true,
             _ => false,
+        }
+    }
+    
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            SymbolName::None => None,
+            SymbolName::Internal(_) => None,
+            SymbolName::InternalNamed(name)
+            | SymbolName::InternalUnmangled(name)
+            | SymbolName::Unmangled(name) => Some(name),
+        }
+    }
+}
+
+impl Display for SymbolName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SymbolName::None => write!(f, "<none>"),
+            SymbolName::Internal(initial_char) => write!(f, "{initial_char}<???>"),
+            SymbolName::InternalNamed(name)
+            | SymbolName::InternalUnmangled(name)
+            | SymbolName::Unmangled(name) => write!(f, "{name}"),
         }
     }
 }
@@ -194,20 +218,7 @@ impl<'a> ElfWriteDomain<'a> {
     }
     
     pub fn put_symbol(self, token: HeapToken, symbol: SymbolDeclaration) {
-        let SymbolDeclaration { name, offset, size } = symbol;
-        
-        let name = match name {
-            SymbolName::Internal(initial_char) => {
-                SymbolName::InternalNamed(format!("{initial_char}123"))
-            },
-            other => other,
-        };
-        
-        self.symbol_declarations.borrow_mut().insert(token, SymbolDeclaration {
-            name,
-            offset,
-            size,
-        });
+        self.symbol_declarations.borrow_mut().insert(token, symbol);
     }
     
     pub fn write_pointer_debug(self, writer: &mut impl Writer, value: Pointer) -> Result<()> {

@@ -218,3 +218,62 @@ impl Symbol {
         self.header.st_size
     }
 }
+
+pub const AUTO_SYMBOL_NAME_CHAR_COUNT: usize = 93;
+pub const AUTO_SYMBOL_NAME_CHARS: &[u8; AUTO_SYMBOL_NAME_CHAR_COUNT] = 
+    b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@$%^&*()_+-=[]{};\'\\:\"|,./<>?~`";
+
+#[derive(Default)]
+pub struct SymbolNameGenerator {
+    indices: Vec<usize>,
+    result: Vec<u8>,
+}
+
+impl SymbolNameGenerator {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    
+    pub fn next(&mut self) -> &str {
+        if self.indices.is_empty() {
+            self.indices.push(0);
+            self.result.push(AUTO_SYMBOL_NAME_CHARS[0]);
+            
+            return "";
+        }
+        
+        let mut i = self.indices.len() - 1;
+        while self.count_up_check_overflow(i) {
+            if i == 0 {
+                self.indices.push(0);
+                self.result.push(AUTO_SYMBOL_NAME_CHARS[0]);
+                break;
+            }
+            i -= 1;
+        }
+        
+        // SAFETY: self.result only ever contains valid ascii characters
+        unsafe {
+            str::from_utf8_unchecked(&self.result)
+        }
+    }
+    
+    fn count_up_check_overflow(&mut self, index: usize) -> bool {
+        let value = &mut self.indices[index];
+        *value += 1;
+        
+        let overflow = *value >= AUTO_SYMBOL_NAME_CHAR_COUNT;
+        if overflow && index == 0 {
+            // first character for some reason is never 'a'
+            *value = 1;
+        } else if overflow {
+            *value = 0;
+        }
+        
+        self.result[index] = AUTO_SYMBOL_NAME_CHARS[*value];
+        
+        overflow
+    }
+}
+
+

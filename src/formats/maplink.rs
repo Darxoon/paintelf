@@ -3,7 +3,7 @@ use std::{io::SeekFrom, mem};
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
-use vivibin::{scoped_reader_pos, CanRead, CanWrite, HeapToken, ReadDomainExt, Readable, Reader, Writable, WriteCtx, WriteDomainExt, Writer};
+use vivibin::{scoped_reader_pos, CanRead, CanWrite, ReadDomainExt, Readable, Reader, Writable, WriteCtx, WriteDomainExt, Writer};
 
 use crate::{formats::FileData, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, SymbolDeclaration, SymbolName};
 
@@ -81,6 +81,9 @@ impl<D: CanWrite<String> + CanWrite<SymbolDeclaration>> Writable<D> for MaplinkA
         let token = ctx.allocate_next_block_aligned(4, |ctx| {
             let start_pos = ctx.position()? as usize;
             ctx.write_c_str(&self.map_name)?;
+            if self.map_name.len() > 2 {
+                ctx.align_to(4)?;
+            }
             name_size = ctx.position()? as usize - start_pos;
             Ok(())
         })?;
@@ -102,10 +105,7 @@ impl<D: CanWrite<String> + CanWrite<SymbolDeclaration>> Writable<D> for MaplinkA
         })?;
         ctx.write_token::<4>(token)?;
         domain.write(ctx, &SymbolDeclaration {
-            name: match self.map_name.chars().next() {
-                Some(initial_char) => SymbolName::Internal(initial_char),
-                None => SymbolName::None,
-            },
+            name: SymbolName::InternalNamed(self.map_name.clone()),
             offset: token,
             size: links_size as u32,
         })?;
