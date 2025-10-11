@@ -205,10 +205,24 @@ impl<'a> ElfWriteDomain<'a> {
             let alignment = if self.prev_string_len.get() <= 2 && value.len() <= 1
                 { 0 } else { 4 };
             self.prev_string_len.set(value.len());
-            let new_token = ctx.allocate_next_block_aligned(alignment, move |ctx| {
+            
+            let mut name_size: usize = 0;
+            let new_token = ctx.allocate_next_block_aligned(alignment, |ctx| {
+                let start_pos = ctx.position()? as usize;
                 ctx.write_c_str(value)?;
+                if value.len() > 2 {
+                    ctx.align_to(4)?;
+                }
+                name_size = ctx.position()? as usize - start_pos;
                 Ok(())
             })?;
+            
+            self.put_symbol(new_token, SymbolDeclaration {
+                name: SymbolName::Internal('.'),
+                offset: new_token,
+                size: name_size as u32,
+            });
+            
             self.string_map.borrow_mut().insert(value.to_string(), new_token);
             new_token
         };

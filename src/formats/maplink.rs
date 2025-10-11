@@ -23,8 +23,16 @@ pub fn read_maplink<'a>(reader: &mut impl Reader, domain: ElfReadDomain) -> Resu
 }
 
 pub fn write_maplink(ctx: &mut impl WriteCtx, domain: ElfWriteDomain, areas: &[MaplinkArea]) -> Result<()> {
+    let token =  ctx.heap_token_at_current_pos()?;
     domain.write_fallback::<u32>(ctx, &(areas.len() as u32))?;
     
+    domain.put_symbol(token, SymbolDeclaration {
+        name: SymbolName::Unmangled("dataCount__Q3_4data3fld7maplink".to_string()),
+        offset: token,
+        size: 4,
+    });
+    
+    let token =  ctx.heap_token_at_current_pos()?;
     let areas_start = ctx.position()?;
     
     for area in areas {
@@ -33,14 +41,9 @@ pub fn write_maplink(ctx: &mut impl WriteCtx, domain: ElfWriteDomain, areas: &[M
     
     let areas_size = ctx.position()? - areas_start;
     
-    domain.put_symbol(unsafe { mem::transmute(0u64) }, SymbolDeclaration {
-        name: SymbolName::Unmangled("dataCount__Q3_4data3fld7maplink".to_string()),
-        offset: unsafe { mem::transmute(0u64) },
-        size: 4,
-    });
-    domain.put_symbol(unsafe { mem::transmute(0u64) }, SymbolDeclaration {
+    domain.put_symbol(token, SymbolDeclaration {
         name: SymbolName::Unmangled("datas__Q3_4data3fld7maplink".to_string()),
-        offset: unsafe { mem::transmute(0u64) },
+        offset: token,
         size: areas_size as u32,
     });
     

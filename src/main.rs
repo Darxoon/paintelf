@@ -87,16 +87,26 @@ fn write_symtab(
     {
         let mut symbol_name_gen = SymbolNameGenerator::new();
         
-        for symbol in symbol_declarations.values_mut() {
-            if let SymbolName::Internal(initial_char) = symbol.name {
-                let tail = symbol_name_gen.next();
-                
-                let mut name = String::with_capacity(tail.len() + 1);
-                name.push(initial_char);
-                name.push_str(tail);
-                
-                symbol.name = SymbolName::InternalUnmangled(name);
-            }
+        let mut symbols: Vec<(char, &mut SymbolDeclaration)> = symbol_declarations
+            .values_mut()
+            .flat_map(|symbol| {
+                match symbol.name {
+                    SymbolName::Internal(initial_char) => Some((initial_char, symbol)),
+                    _ => None
+                }
+            })
+            .collect::<Vec<_>>();
+        
+        symbols.sort_by_key(|(_, symbol)| symbol.offset);
+        
+        for (initial_char, symbol) in symbols {
+            let tail = symbol_name_gen.next();
+            
+            let mut name = String::with_capacity(tail.len() + 1);
+            name.push(initial_char);
+            name.push_str(tail);
+            
+            symbol.name = SymbolName::InternalUnmangled(name);
         }
     }
     
@@ -183,7 +193,8 @@ fn write_symtab(
         st_shndx: 1,
     }, &mut writer)?;
     
-    let _named_symbols: Vec<(HeapToken, SymbolDeclaration)> = symbol_declarations
+    // setup serialization of symbols
+    let named_symbols: Vec<(HeapToken, SymbolDeclaration)> = symbol_declarations
         .extract_if(.., |_, symbol| !symbol.name.is_internal())
         .collect::<Vec<_>>();
     
@@ -192,7 +203,7 @@ fn write_symtab(
     let mut strtab = Cursor::new(Vec::new());
     strtab.write(b"\0data_fld_maplink.cpp\0")?;
     
-    for (token, symbol) in symbol_declarations {
+    let mut write_symbol: _ = |writer: &mut Cursor<Vec<u8>>, token: HeapToken, symbol: &SymbolDeclaration, st_info: u8| -> Result<()> {
         // serialize name
         let name_ptr = if let Some(symbol_name) = symbol.name.as_str() {
             let name_ptr = Pointer::current(&mut strtab)?;
@@ -208,10 +219,35 @@ fn write_symtab(
             st_name: name_ptr,
             st_value: token.resolve(block_offsets) as u32,
             st_size: symbol.size,
-            st_info: 1,
+            st_info,
             st_other: 0,
             st_shndx: 1,
+        }, writer)?;
+        
+        Ok(())
+    };
+    
+    // serialize unnamed/automatically named/internally linked symbols
+    for (token, symbol) in symbol_declarations.iter() {
+        write_symbol(&mut writer, *token, symbol, 0x1)?;
+    }
+    
+    // weird unknown symbols (0x10 implies "external reference" (??))
+    for _ in 0..12 {
+        BinWrite::write(&SymbolHeader {
+            st_name: 0,
+            st_value: 0,
+            st_size: 0,
+            st_info: 0x10,
+            st_other: 0,
+            st_shndx: 0,
         }, &mut writer)?;
+    }
+    
+    // serialize named symbols
+    for (token, symbol) in named_symbols {
+        println!("named symbol {symbol:?}");
+        write_symbol(&mut writer, token, &symbol, 0x11)?;
     }
     
     let out_symtab: Vec<u8> = writer.into_inner();
