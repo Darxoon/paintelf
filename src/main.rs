@@ -48,7 +48,7 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     
     let mut block_offsets = Vec::new();
     
-    let (result_buffer, mut symbol_declarations, relocations) = match data {
+    let (result_buffer, mut symbol_declarations, mut relocations) = match data {
         FileData::Maplink(maplink_areas) => {
             let string_map = RefCell::new(HashMap::new());
             let symbol_declarations = RefCell::new(IndexMap::new());
@@ -74,7 +74,7 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     let out_path = input_file_path.with_file_name(base_name);
     
     let symbol_indices = write_symtab(&out_path, &block_offsets, &mut symbol_declarations)?;
-    write_relocations(&out_path, &block_offsets, &symbol_indices, &relocations)?;
+    write_relocations(&out_path, &block_offsets, &symbol_indices, &mut relocations)?;
     
     fs::write(&out_path, &result_buffer)?;
     Ok(())
@@ -84,8 +84,10 @@ fn write_relocations(
     out_path: &Path,
     block_offsets: &[usize],
     symbol_indices: &HashMap<HeapToken, usize>,
-    relocations: &[RelDeclaration],
+    relocations: &mut [RelDeclaration],
 ) -> Result<()> {
+    relocations.sort_by_key(|rel| rel.base_location);
+    
     let mut writer = Cursor::new(Vec::new());
     
     for relocation in relocations {

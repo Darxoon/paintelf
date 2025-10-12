@@ -236,6 +236,11 @@ impl<'a> ElfWriteDomain<'a> {
             new_token
         };
         
+        let current_pos = ctx.heap_token_at_current_pos()?;
+        self.put_relocation(RelDeclaration {
+            base_location: current_pos,
+            target_location: token,
+        });
         ctx.write_token::<4>(token)?;
         Ok(())
     }
