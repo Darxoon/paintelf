@@ -188,6 +188,16 @@ pub struct Relocation {
     pub addend: u32,
 }
 
+impl Relocation {
+    pub fn new(offset: u32, info: u32, addend: u32) -> Self {
+        Self {
+            offset,
+            info,
+            addend,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, BinRead, BinWrite)]
 #[brw(big)]
 pub struct SymbolHeader {

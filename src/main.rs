@@ -5,9 +5,7 @@ use binrw::BinWrite;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use paintelf::{
-    elf::{ElfContainer, Section, Symbol, SymbolHeader, SymbolNameGenerator},
-    formats::{maplink::{read_maplink, write_maplink}, FileData},
-    util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, SymbolDeclaration, SymbolName,
+    elf::{ElfContainer, Relocation, Section, Symbol, SymbolHeader, SymbolNameGenerator}, formats::{maplink::{read_maplink, write_maplink}, FileData}, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, RelDeclaration, SymbolDeclaration, SymbolName
 };
 use vivibin::{HeapToken, WriteCtxImpl, WriteDomainExt};
 
@@ -50,17 +48,22 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     
     let mut block_offsets = Vec::new();
     
-    let (result_buffer, mut symbol_declarations) = match data {
+    let (result_buffer, mut symbol_declarations, relocations) = match data {
         FileData::Maplink(maplink_areas) => {
             let string_map = RefCell::new(HashMap::new());
             let symbol_declarations = RefCell::new(IndexMap::new());
+            let relocations = RefCell::new(Vec::new());
             let prev_string_len = Cell::new(0);
-            let domain = ElfWriteDomain::new(&string_map, &symbol_declarations, &prev_string_len);
+            let domain = ElfWriteDomain::new(&string_map, &symbol_declarations, &relocations, &prev_string_len);
             
             let mut ctx: WriteCtxImpl<ElfWriteDomain> = ElfWriteDomain::new_ctx();
             write_maplink(&mut ctx, domain, &maplink_areas)?;
             
-            (ctx.to_buffer(domain, Some(&mut block_offsets))?, symbol_declarations.into_inner())
+            (
+                ctx.to_buffer(domain, Some(&mut block_offsets))?,
+                symbol_declarations.into_inner(),
+                relocations.into_inner(),
+            )
         },
     };
     
@@ -70,19 +73,39 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     base_name.push("_serialized.rodata");
     let out_path = input_file_path.with_file_name(base_name);
     
-    write_symtab(&out_path, &block_offsets, &mut symbol_declarations)?;
+    let symbol_indices = write_symtab(&out_path, &block_offsets, &mut symbol_declarations)?;
+    write_relocations(&out_path, &block_offsets, &symbol_indices, &relocations)?;
     
     fs::write(&out_path, &result_buffer)?;
     Ok(())
 }
 
-fn write_symtab(
+fn write_relocations(
     out_path: &Path,
     block_offsets: &[usize],
-    symbol_declarations: &mut IndexMap<HeapToken, SymbolDeclaration>
+    symbol_indices: &HashMap<HeapToken, usize>,
+    relocations: &[RelDeclaration],
 ) -> Result<()> {
     let mut writer = Cursor::new(Vec::new());
     
+    for relocation in relocations {
+        let base_location = relocation.base_location.resolve(block_offsets);
+        let symbol_idx = symbol_indices.get(&relocation.target_location).unwrap();
+        
+        let raw = Relocation::new(base_location as u32, (symbol_idx << 8 | 1) as u32, 0);
+        raw.write(&mut writer)?;
+    }
+    
+    let out_rela_rodata: Vec<u8> = writer.into_inner();
+    let out_path = out_path.with_extension("rela.rodata");
+    fs::write(&out_path, &out_rela_rodata).map_err(Error::from)
+}
+
+fn write_symtab(
+    out_path: &Path,
+    block_offsets: &[usize],
+    symbol_declarations: &mut IndexMap<HeapToken, SymbolDeclaration>,
+) -> Result<HashMap<HeapToken, usize>> {
     // name unnamed internal symbols
     {
         let mut symbol_name_gen = SymbolNameGenerator::new();
@@ -172,6 +195,11 @@ fn write_symtab(
         }
     }
     
+    // start serializing
+    let mut writer = Cursor::new(Vec::new());
+    let mut symbol_indices = HashMap::new();
+    let mut symbol_count =  0;
+    
     // null
     BinWrite::write(&SymbolHeader::default(), &mut writer)?;
     // data_fld_maplink.cpp
@@ -192,6 +220,7 @@ fn write_symtab(
         st_other: 0,
         st_shndx: 1,
     }, &mut writer)?;
+    symbol_count += 3;
     
     // setup serialization of symbols
     let named_symbols: Vec<(HeapToken, SymbolDeclaration)> = symbol_declarations
@@ -215,6 +244,8 @@ fn write_symtab(
         };
         
         // serialize symbol
+        symbol_indices.insert(token, symbol_count);
+        symbol_count += 1;
         BinWrite::write(&SymbolHeader {
             st_name: name_ptr,
             st_value: token.resolve(block_offsets) as u32,
@@ -252,12 +283,12 @@ fn write_symtab(
     
     let out_symtab: Vec<u8> = writer.into_inner();
     let out_path = out_path.with_extension("symtab");
-    fs::write(&out_path, &out_symtab).map_err(Error::from)?;
+    fs::write(&out_path, &out_symtab)?;
     
     let out_strtab: Vec<u8> = strtab.into_inner();
     let out_path = out_path.with_extension("strtab");
-    fs::write(&out_path, &out_strtab).map_err(Error::from)?;
-    Ok(())
+    fs::write(&out_path, &out_strtab)?;
+    Ok(symbol_indices)
 }
 
 fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {

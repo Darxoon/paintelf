@@ -164,10 +164,17 @@ pub struct SymbolDeclaration {
     pub size: u32,
 }
 
+#[derive(Clone, Debug)]
+pub struct RelDeclaration {
+    pub base_location: HeapToken,
+    pub target_location: HeapToken,
+}
+
 #[derive(Clone, Copy)]
 pub struct ElfWriteDomain<'a> {
     string_map: &'a RefCell<HashMap<String, HeapToken>>,
     symbol_declarations: &'a RefCell<IndexMap<HeapToken, SymbolDeclaration>>,
+    relocations: &'a RefCell<Vec<RelDeclaration>>,
     prev_string_len: &'a Cell<usize>,
 }
 
@@ -181,11 +188,13 @@ impl<'a> ElfWriteDomain<'a> {
     pub fn new(
         string_map: &'a RefCell<HashMap<String, HeapToken>>,
         symbol_declarations: &'a RefCell<IndexMap<HeapToken, SymbolDeclaration>>,
+        relocations: &'a RefCell<Vec<RelDeclaration>>,
         prev_string_len: &'a Cell<usize>,
     ) -> Self {
         Self {
             string_map,
             symbol_declarations,
+            relocations,
             prev_string_len,
         }
     }
@@ -235,6 +244,10 @@ impl<'a> ElfWriteDomain<'a> {
         self.symbol_declarations.borrow_mut().insert(token, symbol);
     }
     
+    pub fn put_relocation(self, relocation: RelDeclaration) {
+        self.relocations.borrow_mut().push(relocation);
+    }
+    
     pub fn write_pointer_debug(self, writer: &mut impl Writer, value: Pointer) -> Result<()> {
         writer.write_u32::<BigEndian>(value.0 | 0x70000000)?;
         Ok(())
@@ -272,6 +285,13 @@ impl CanWrite<String> for ElfWriteDomain<'_> {
 impl CanWrite<SymbolDeclaration> for ElfWriteDomain<'_> {
     fn write(self, _: &mut impl WriteCtx, value: &SymbolDeclaration) -> Result<()> {
         self.put_symbol(value.offset, value.clone());
+        Ok(())
+    }
+}
+
+impl CanWrite<RelDeclaration> for ElfWriteDomain<'_> {
+    fn write(self, _: &mut impl WriteCtx, value: &RelDeclaration) -> Result<()> {
+        self.put_relocation(value.clone());
         Ok(())
     }
 }
