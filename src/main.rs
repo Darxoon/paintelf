@@ -5,7 +5,7 @@ use binrw::BinWrite;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use paintelf::{
-    elf::{ElfContainer, Relocation, Section, Symbol, SymbolHeader, SymbolNameGenerator}, formats::{maplink::{read_maplink, write_maplink}, FileData}, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, RelDeclaration, SymbolDeclaration, SymbolName
+    elf::{Relocation, Section, Symbol, SymbolHeader, SymbolNameGenerator}, elf_container::ElfContainer, formats::{maplink::{read_maplink, write_maplink}, FileData}, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, RelDeclaration, SymbolDeclaration, SymbolName
 };
 use vivibin::{HeapToken, WriteCtxImpl, WriteDomainExt};
 
@@ -51,7 +51,7 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     let (result_buffer, mut symbol_declarations, mut relocations) = match data {
         FileData::Maplink(maplink_areas) => {
             let string_map = RefCell::new(HashMap::new());
-            let symbol_declarations = RefCell::new(IndexMap::new());
+            let symbol_declarations = RefCell::new(Vec::new());
             let relocations = RefCell::new(Vec::new());
             let prev_string_len = Cell::new(0);
             let domain = ElfWriteDomain::new(&string_map, &symbol_declarations, &relocations, &prev_string_len);
@@ -106,14 +106,13 @@ fn write_relocations(
 fn write_symtab(
     out_path: &Path,
     block_offsets: &[usize],
-    symbol_declarations: &mut IndexMap<HeapToken, SymbolDeclaration>,
+    symbol_declarations: &mut Vec<SymbolDeclaration>,
 ) -> Result<HashMap<HeapToken, usize>> {
     // name unnamed internal symbols
     {
         let mut symbol_name_gen = SymbolNameGenerator::new();
         
-        let mut symbols: Vec<(char, &mut SymbolDeclaration)> = symbol_declarations
-            .values_mut()
+        let mut symbols: Vec<(char, &mut SymbolDeclaration)> = symbol_declarations.iter_mut()
             .flat_map(|symbol| {
                 match symbol.name {
                     SymbolName::Internal(initial_char) => Some((initial_char, symbol)),
@@ -139,8 +138,7 @@ fn write_symtab(
     {
         let mut symbol_name_gen = SymbolNameGenerator::new();
         
-        let mut symbols: Vec<&mut SymbolDeclaration> = symbol_declarations
-            .values_mut()
+        let mut symbols: Vec<&mut SymbolDeclaration> = symbol_declarations.iter_mut()
             .filter(|symbol| matches!(symbol.name, SymbolName::InternalNamed(_)))
             .collect::<Vec<_>>();
         
@@ -225,16 +223,16 @@ fn write_symtab(
     symbol_count += 3;
     
     // setup serialization of symbols
-    let named_symbols: Vec<(HeapToken, SymbolDeclaration)> = symbol_declarations
-        .extract_if(.., |_, symbol| !symbol.name.is_internal())
+    let named_symbols: Vec<SymbolDeclaration> = symbol_declarations
+        .extract_if(.., |symbol| !symbol.name.is_internal())
         .collect::<Vec<_>>();
     
-    symbol_declarations.sort_by_key(|_, symbol| symbol.offset.resolve(block_offsets));
+    symbol_declarations.sort_by_key(|symbol| symbol.offset.resolve(block_offsets));
     
     let mut strtab = Cursor::new(Vec::new());
     strtab.write(b"\0data_fld_maplink.cpp\0")?;
     
-    let mut write_symbol: _ = |writer: &mut Cursor<Vec<u8>>, token: HeapToken, symbol: &SymbolDeclaration, st_info: u8| -> Result<()> {
+    let mut write_symbol: _ = |writer: &mut Cursor<Vec<u8>>, symbol: &SymbolDeclaration, st_info: u8| -> Result<()> {
         // serialize name
         let name_ptr = if let Some(symbol_name) = symbol.name.as_str() {
             let name_ptr = Pointer::current(&mut strtab)?;
@@ -246,11 +244,11 @@ fn write_symtab(
         };
         
         // serialize symbol
-        symbol_indices.insert(token, symbol_count);
+        symbol_indices.insert(symbol.offset, symbol_count);
         symbol_count += 1;
         BinWrite::write(&SymbolHeader {
             st_name: name_ptr,
-            st_value: token.resolve(block_offsets) as u32,
+            st_value: symbol.offset.resolve(block_offsets) as u32,
             st_size: symbol.size,
             st_info,
             st_other: 0,
@@ -261,8 +259,8 @@ fn write_symtab(
     };
     
     // serialize unnamed/automatically named/internally linked symbols
-    for (token, symbol) in symbol_declarations.iter() {
-        write_symbol(&mut writer, *token, symbol, 0x1)?;
+    for symbol in symbol_declarations.iter() {
+        write_symbol(&mut writer, symbol, 0x1)?;
     }
     
     // weird unknown symbols (0x10 implies "external reference" (??))
@@ -278,9 +276,9 @@ fn write_symtab(
     }
     
     // serialize named symbols
-    for (token, symbol) in named_symbols {
+    for symbol in named_symbols {
         println!("named symbol {symbol:?}");
-        write_symbol(&mut writer, token, &symbol, 0x11)?;
+        write_symbol(&mut writer, &symbol, 0x11)?;
     }
     
     let out_symtab: Vec<u8> = writer.into_inner();
@@ -300,15 +298,15 @@ fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
     let elf_file = ElfContainer::from_reader(&mut reader)?;
     
     // get necessary sections
-    let rodata_section = &elf_file.sections[".rodata"];
+    let rodata_section = &elf_file.content_sections[".rodata"];
     let Some(rodata_relocations) = &rodata_section.relocations else {
         bail!("Could not find section .rela.rodata");
     };
     
     // apply relocations and output the result (debug only)
     if is_debug {
-        let write_section_debug: _ = |section_name: &str| -> Result<()> {
-            let section = &elf_file.sections[section_name];
+        let write_section_debug: _ = |sections: &IndexMap<String, Section>, section_name: &str| -> Result<()> {
+            let section = &sections[section_name];
             let out_section: Vec<u8> = get_section_linked(section, &elf_file.symbols)?;
             let out_path = input_file_path.with_extension(section_name.strip_prefix(".").unwrap_or(section_name));
             fs::write(out_path, &out_section)?;
@@ -316,10 +314,17 @@ fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
             Ok(())
         };
         
-        write_section_debug(".rodata")?;
-        write_section_debug(".rela.rodata")?;
-        write_section_debug(".symtab")?;
-        write_section_debug(".strtab")?;
+        write_section_debug(&elf_file.content_sections, ".rodata")?;
+        write_section_debug(&elf_file.meta_sections, ".rela.rodata")?;
+        write_section_debug(&elf_file.meta_sections, ".symtab")?;
+        write_section_debug(&elf_file.meta_sections, ".strtab")?;
+        
+        // try re-serializing elf file
+        let mut writer = Cursor::new(Vec::new());
+        elf_file.to_writer(&mut writer)?;
+        let out_path = input_file_path.with_extension("elf2");
+        fs::write(&out_path, writer.get_ref())?;
+        println!("Re-serialized elf file to {}", out_path.file_name().unwrap().display());
     }
     
     // parse maplink file

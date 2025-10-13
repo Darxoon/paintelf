@@ -8,6 +8,7 @@ use vivibin::{CanRead, CanWrite, EndianSpecific, Endianness, HeapToken, ReadDoma
 use crate::{elf::{Relocation, Symbol}, util::{pointer::Pointer, read_string}};
 
 pub mod elf;
+pub mod elf_container;
 pub mod formats;
 pub mod util;
 
@@ -173,7 +174,7 @@ pub struct RelDeclaration {
 #[derive(Clone, Copy)]
 pub struct ElfWriteDomain<'a> {
     string_map: &'a RefCell<HashMap<String, HeapToken>>,
-    symbol_declarations: &'a RefCell<IndexMap<HeapToken, SymbolDeclaration>>,
+    symbol_declarations: &'a RefCell<Vec<SymbolDeclaration>>,
     relocations: &'a RefCell<Vec<RelDeclaration>>,
     prev_string_len: &'a Cell<usize>,
 }
@@ -187,7 +188,7 @@ impl EndianSpecific for ElfWriteDomain<'_> {
 impl<'a> ElfWriteDomain<'a> {
     pub fn new(
         string_map: &'a RefCell<HashMap<String, HeapToken>>,
-        symbol_declarations: &'a RefCell<IndexMap<HeapToken, SymbolDeclaration>>,
+        symbol_declarations: &'a RefCell<Vec<SymbolDeclaration>>,
         relocations: &'a RefCell<Vec<RelDeclaration>>,
         prev_string_len: &'a Cell<usize>,
     ) -> Self {
@@ -226,7 +227,7 @@ impl<'a> ElfWriteDomain<'a> {
                 Ok(())
             })?;
             
-            self.put_symbol(new_token, SymbolDeclaration {
+            self.put_symbol(SymbolDeclaration {
                 name: SymbolName::Internal('.'),
                 offset: new_token,
                 size: name_size as u32,
@@ -245,8 +246,8 @@ impl<'a> ElfWriteDomain<'a> {
         Ok(())
     }
     
-    pub fn put_symbol(self, token: HeapToken, symbol: SymbolDeclaration) {
-        self.symbol_declarations.borrow_mut().insert(token, symbol);
+    pub fn put_symbol(self, symbol: SymbolDeclaration) {
+        self.symbol_declarations.borrow_mut().push(symbol);
     }
     
     pub fn put_relocation(self, relocation: RelDeclaration) {
@@ -289,7 +290,7 @@ impl CanWrite<String> for ElfWriteDomain<'_> {
 // TODO: this sucks
 impl CanWrite<SymbolDeclaration> for ElfWriteDomain<'_> {
     fn write(self, _: &mut impl WriteCtx, value: &SymbolDeclaration) -> Result<()> {
-        self.put_symbol(value.offset, value.clone());
+        self.put_symbol(value.clone());
         Ok(())
     }
 }
