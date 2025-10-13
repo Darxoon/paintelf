@@ -1,11 +1,11 @@
-use std::{cell::{Cell, RefCell}, cmp::Ordering, collections::HashMap, env, fs, io::{Cursor, Read, Write}, path::{Path, PathBuf}, process::exit};
+use std::{cell::{Cell, RefCell}, cmp::Ordering, collections::HashMap, env, fs, io::{Cursor, Read, Write}, path::{Path, PathBuf}, process::exit, u32};
 
-use anyhow::{anyhow, bail, Error, Result};
+use anyhow::{anyhow, bail, Result};
 use binrw::BinWrite;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use paintelf::{
-    elf::{Relocation, Section, Symbol, SymbolHeader, SymbolNameGenerator}, elf_container::ElfContainer, formats::{maplink::{read_maplink, write_maplink}, FileData}, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, RelDeclaration, SymbolDeclaration, SymbolName
+    elf::{Relocation, Section, SectionHeader, Symbol, SymbolHeader, SymbolNameGenerator}, elf_container::{ElfContainer, ElfHeader, ELF_HEADER_IDENT}, formats::{maplink::{read_maplink, write_maplink}, FileData}, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, RelDeclaration, SymbolDeclaration, SymbolName
 };
 use vivibin::{HeapToken, WriteCtxImpl, WriteDomainExt};
 
@@ -71,21 +71,151 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
         .ok_or_else(|| anyhow!("Invalid file path {}", input_file_path.display()))?
         .to_owned();
     base_name.push("_serialized.rodata");
-    let out_path = input_file_path.with_file_name(base_name);
+    let mut out_path = input_file_path.with_file_name(base_name);
     
-    let symbol_indices = write_symtab(&out_path, &block_offsets, &mut symbol_declarations)?;
-    write_relocations(&out_path, &block_offsets, &symbol_indices, &mut relocations)?;
+    let mut symbol_indices = HashMap::new();
+    let (symtab, strtab) = write_symtab(&block_offsets, &mut symbol_indices, &mut symbol_declarations)?;
+    let rela_rodata = write_relocations(&block_offsets, &symbol_indices, &mut relocations)?;
     
+    // write individual sections
     fs::write(&out_path, &result_buffer)?;
+    out_path.set_extension("symtab");
+    fs::write(&out_path, &symtab)?;
+    out_path.set_extension("strtab");
+    fs::write(&out_path, &strtab)?;
+    out_path.set_extension("rela_rodata");
+    fs::write(&out_path, &rela_rodata)?;
+    
+    // populate new ElfContainer
+    // TODO: verify these values are correct in shifted files
+    let header = ElfHeader {
+        e_ident: ELF_HEADER_IDENT,
+        e_type: 1,
+        e_machine: 0x14,
+        e_version: 1,
+        e_entry: 0,
+        e_phoff: 0,
+        e_shoff: u32::MAX,
+        e_flags: 0x80000000,
+        e_ehsize: 0x34,
+        e_phentsize: 0,
+        e_phnum: 0,
+        e_shentsize: 0x28,
+        e_shnum: 6,
+        e_shstrndx: 3,
+    };
+    let mut result = ElfContainer::new(header);
+    
+    // TODO: provide a nicer api for this
+    result.content_sections.insert("".to_string(), Section::default());
+    
+    result.content_sections.insert(".rodata".to_string(), Section {
+        header: SectionHeader {
+            sh_name: 0,
+            sh_type: 1,
+            sh_flags: 2,
+            sh_addr: 0,
+            sh_offset: 0,
+            sh_size: 0,
+            sh_link: 0,
+            sh_info: 0,
+            sh_addralign: 4,
+            sh_entsize: 0,
+        },
+        name: ".rodata".to_string(),
+        relocations: Some(IndexMap::new()),
+        content: result_buffer,
+    });
+    
+    const SH_STRING_TAB: &[u8] = b"\0.symtab\0.strtab\0.shstrtab\0.rela.rodata\0";
+    
+    result.content_sections.insert(".shstrtab".to_string(), Section {
+        header: SectionHeader {
+            sh_name: 0,
+            sh_type: 3,
+            sh_flags: 0,
+            sh_addr: 0,
+            sh_offset: 0,
+            sh_size: 0,
+            sh_link: 0,
+            sh_info: 0,
+            sh_addralign: 1,
+            sh_entsize: 0,
+        },
+        name: ".shstrtab".to_string(),
+        relocations: None,
+        content: SH_STRING_TAB.to_owned(),
+    });
+    
+    result.meta_sections.insert(".strtab".to_string(), Section {
+        header: SectionHeader {
+            sh_name: 0,
+            sh_type: 3,
+            sh_flags: 0,
+            sh_addr: 0,
+            sh_offset: 0,
+            sh_size: 0,
+            sh_link: 0,
+            sh_info: 0,
+            sh_addralign: 1,
+            sh_entsize: 0,
+        },
+        name: ".strtab".to_string(),
+        relocations: None,
+        content: strtab,
+    });
+    
+    result.meta_sections.insert(".symtab".to_string(), Section {
+        header: SectionHeader {
+            sh_name: 0,
+            sh_type: 2,
+            sh_flags: 0,
+            sh_addr: 0,
+            sh_offset: 0,
+            sh_size: 0,
+            sh_link: 5,
+            sh_info: 0x2202,
+            sh_addralign: 4,
+            sh_entsize: 0x10,
+        },
+        name: ".symtab".to_string(),
+        relocations: None,
+        content: symtab,
+    });
+    
+    result.meta_sections.insert(".rela.rodata".to_string(), Section {
+        header: SectionHeader {
+            sh_name: 0,
+            sh_type: 4,
+            sh_flags: 0x40,
+            sh_addr: 0,
+            sh_offset: 0,
+            sh_size: 0,
+            sh_link: 4,
+            sh_info: 1,
+            sh_addralign: 4,
+            sh_entsize: 0xc,
+        },
+        name: ".rela.rodata".to_string(),
+        relocations: None,
+        content: rela_rodata,
+    });
+    
+    let mut writer = Cursor::new(Vec::new());
+    result.to_writer(&mut writer)?;
+    
+    // write resulting elf
+    out_path.set_extension("elf");
+    fs::write(&out_path, writer.get_ref())?;
+    
     Ok(())
 }
 
 fn write_relocations(
-    out_path: &Path,
     block_offsets: &[usize],
     symbol_indices: &HashMap<HeapToken, usize>,
     relocations: &mut [RelDeclaration],
-) -> Result<()> {
+) -> Result<Vec<u8>> {
     relocations.sort_by_key(|rel| rel.base_location);
     
     let mut writer = Cursor::new(Vec::new());
@@ -98,16 +228,14 @@ fn write_relocations(
         raw.write(&mut writer)?;
     }
     
-    let out_rela_rodata: Vec<u8> = writer.into_inner();
-    let out_path = out_path.with_extension("rela.rodata");
-    fs::write(&out_path, &out_rela_rodata).map_err(Error::from)
+    Ok(writer.into_inner())
 }
 
 fn write_symtab(
-    out_path: &Path,
     block_offsets: &[usize],
+    symbol_indices: &mut HashMap<HeapToken, usize>,
     symbol_declarations: &mut Vec<SymbolDeclaration>,
-) -> Result<HashMap<HeapToken, usize>> {
+) -> Result<(Vec<u8>, Vec<u8>)> {
     // name unnamed internal symbols
     {
         let mut symbol_name_gen = SymbolNameGenerator::new();
@@ -197,7 +325,6 @@ fn write_symtab(
     
     // start serializing
     let mut writer = Cursor::new(Vec::new());
-    let mut symbol_indices = HashMap::new();
     let mut symbol_count =  0;
     
     // null
@@ -281,14 +408,7 @@ fn write_symtab(
         write_symbol(&mut writer, &symbol, 0x11)?;
     }
     
-    let out_symtab: Vec<u8> = writer.into_inner();
-    let out_path = out_path.with_extension("symtab");
-    fs::write(&out_path, &out_symtab)?;
-    
-    let out_strtab: Vec<u8> = strtab.into_inner();
-    let out_path = out_path.with_extension("strtab");
-    fs::write(&out_path, &out_strtab)?;
-    Ok(symbol_indices)
+    Ok((writer.into_inner(), strtab.into_inner()))
 }
 
 fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {

@@ -21,7 +21,7 @@ pub struct SectionHeader {
 	pub sh_entsize: u32,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Section {
     pub header: SectionHeader,
     pub name: String,

@@ -277,7 +277,9 @@ impl WriteDomain for ElfWriteDomain<'_> {
     }
 
     fn apply_reference(self, writer: &mut impl Writer, heap_offset: usize) -> Result<()> {
-        self.write_pointer_debug(writer, Pointer(heap_offset as u32))
+        // TODO: reenable this for debug purposes
+        // self.write_pointer_debug(writer, Pointer(heap_offset as u32))
+        Ok(())
     }
 }
 
