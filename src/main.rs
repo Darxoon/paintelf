@@ -51,21 +51,13 @@ fn main() -> Result<()> {
     let input_file_path = PathBuf::from(input_file_path_str);
     
     if input_file_path_str.ends_with(".yaml") {
-        // Reassemble yaml to elf
-        if !is_debug {
-            println!("Reassembling yaml files currently does not work yet.");
-            println!("If you still want to access the currently experimental implementation, \
-            pass the '--debug' flag before the file path (don't be surprised if it doesn't work).");
-            exit(1);
-        }
-        
-        reassemble_elf(&input_file_path)
+        reassemble_elf(&input_file_path, is_debug)
     } else {
         disassemble_elf(&input_file_path, is_debug)
     }
 }
 
-fn reassemble_elf(input_file_path: &Path) -> Result<()> {
+fn reassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
     let input_file = fs::read_to_string(input_file_path)?;
     let data: FileData = serde_yaml_bw::from_str(&input_file)?;
     
@@ -100,14 +92,16 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     let (symtab, strtab) = write_symtab(&block_offsets, &mut symbol_indices, &mut symbol_declarations)?;
     let rela_rodata = write_relocations(&block_offsets, &symbol_indices, &mut relocations)?;
     
-    // write individual sections
-    fs::write(&out_path, &result_buffer)?;
-    out_path.set_extension("symtab");
-    fs::write(&out_path, &symtab)?;
-    out_path.set_extension("strtab");
-    fs::write(&out_path, &strtab)?;
-    out_path.set_extension("rela_rodata");
-    fs::write(&out_path, &rela_rodata)?;
+    if is_debug {
+        // write individual sections
+        fs::write(&out_path, &result_buffer)?;
+        out_path.set_extension("symtab");
+        fs::write(&out_path, &symtab)?;
+        out_path.set_extension("strtab");
+        fs::write(&out_path, &strtab)?;
+        out_path.set_extension("rela_rodata");
+        fs::write(&out_path, &rela_rodata)?;
+    }
     
     // populate new ElfContainer
     // TODO: verify these values are correct in shifted files
