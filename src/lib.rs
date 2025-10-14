@@ -1,11 +1,24 @@
-use std::{any::TypeId, cell::{Cell, RefCell}, collections::HashMap, fmt::Display, mem::{self, transmute, ManuallyDrop}, ptr};
+use std::{
+    any::TypeId,
+    cell::{Cell, RefCell},
+    collections::HashMap,
+    fmt::Display,
+    mem::{self, ManuallyDrop, transmute},
+    ptr,
+};
 
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{Result, anyhow, ensure};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
-use vivibin::{CanRead, CanWrite, EndianSpecific, Endianness, HeapToken, ReadDomain, Reader, WriteCtx, WriteDomain, Writer};
+use vivibin::{
+    CanRead, CanWrite, EndianSpecific, Endianness, HeapToken, ReadDomain, Reader, WriteCtx,
+    WriteDomain, Writer,
+};
 
-use crate::{elf::{Relocation, Symbol}, util::{pointer::Pointer, read_string}};
+use crate::{
+    elf::{Relocation, Symbol},
+    util::{pointer::Pointer, read_string},
+};
 
 pub mod elf;
 pub mod elf_container;
@@ -212,8 +225,11 @@ impl<'a> ElfWriteDomain<'a> {
         let token = if let Some(token) = existing_token {
             token
         } else {
-            let alignment = if self.prev_string_len.get() <= 2 && value.len() <= 1
-                { 0 } else { 4 };
+            let alignment = if self.prev_string_len.get() <= 2 && value.len() <= 1 {
+                0
+            } else {
+                4
+            };
             self.prev_string_len.set(value.len());
             
             let mut name_size: usize = 0;
@@ -233,7 +249,9 @@ impl<'a> ElfWriteDomain<'a> {
                 size: name_size as u32,
             });
             
-            self.string_map.borrow_mut().insert(value.to_string(), new_token);
+            self.string_map
+                .borrow_mut()
+                .insert(value.to_string(), new_token);
             new_token
         };
         

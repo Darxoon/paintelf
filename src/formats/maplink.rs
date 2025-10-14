@@ -3,9 +3,15 @@ use std::io::SeekFrom;
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
-use vivibin::{scoped_reader_pos, CanRead, CanWrite, ReadDomainExt, Readable, Reader, Writable, WriteCtx, WriteDomainExt, Writer};
+use vivibin::{
+    CanRead, CanWrite, ReadDomainExt, Readable, Reader, Writable, WriteCtx, WriteDomainExt, Writer,
+    scoped_reader_pos,
+};
 
-use crate::{formats::FileData, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, RelDeclaration, SymbolDeclaration, SymbolName};
+use crate::{
+    ElfReadDomain, ElfWriteDomain, RelDeclaration, SymbolDeclaration, SymbolName,
+    formats::FileData, util::pointer::Pointer,
+};
 
 pub fn read_maplink<'a>(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<FileData> {
     let data_count_symbol = domain.find_symbol("dataCount__Q3_4data3fld7maplink")?;
@@ -32,7 +38,7 @@ pub fn write_maplink(ctx: &mut impl WriteCtx, domain: ElfWriteDomain, areas: &[M
         size: 4,
     });
     
-    let token =  ctx.heap_token_at_current_pos()?;
+    let token = ctx.heap_token_at_current_pos()?;
     let areas_start = ctx.position()?;
     
     for area in areas {
@@ -69,10 +75,7 @@ impl<D: CanRead<String> + CanRead<Pointer>> Readable<D> for MaplinkArea {
             .map(|_| Link::from_reader(reader, domain))
             .collect::<Result<_>>()?;
         
-        Ok(Self {
-            map_name,
-            links,
-        })
+        Ok(Self { map_name, links })
     }
 }
 

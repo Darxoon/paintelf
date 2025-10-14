@@ -1,12 +1,19 @@
-use std::{collections::HashMap, io::{Cursor, SeekFrom, Write}, mem::{self, offset_of}};
+use std::{
+    collections::HashMap,
+    io::{Cursor, SeekFrom, Write},
+    mem::{self, offset_of},
+};
 
-use anyhow::{anyhow, bail, Error, Result};
+use anyhow::{Error, Result, anyhow, bail};
 use binrw::{BinRead, BinWrite};
 use indexmap::IndexMap;
 use memchr::memmem;
-use vivibin::{align_to, Reader, Writer};
+use vivibin::{Reader, Writer, align_to};
 
-use crate::{elf::{Relocation, Section, SectionHeader, Symbol, SymbolHeader}, util::{pointer::Pointer, read_string}};
+use crate::{
+    elf::{Relocation, Section, SectionHeader, Symbol, SymbolHeader},
+    util::{pointer::Pointer, read_string},
+};
 
 pub const ELF_HEADER_IDENT: [u8; 16] = [0x7F, 0x45, 0x4C, 0x46, 0x01, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01];
 

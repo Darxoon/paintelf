@@ -1,11 +1,27 @@
-use std::{cell::{Cell, RefCell}, cmp::Ordering, collections::HashMap, env, fs, io::{Cursor, Read, Write}, path::{Path, PathBuf}, process::exit, u32};
+use std::{
+    cell::{Cell, RefCell},
+    cmp::Ordering,
+    collections::HashMap,
+    env, fs,
+    io::{Cursor, Read, Write},
+    path::{Path, PathBuf},
+    process::exit,
+    u32,
+};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use binrw::BinWrite;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use paintelf::{
-    elf::{Relocation, Section, SectionHeader, Symbol, SymbolHeader, SymbolNameGenerator}, elf_container::{ElfContainer, ElfHeader, ELF_HEADER_IDENT}, formats::{maplink::{read_maplink, write_maplink}, FileData}, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, RelDeclaration, SymbolDeclaration, SymbolName
+    ElfReadDomain, ElfWriteDomain, RelDeclaration, SymbolDeclaration, SymbolName,
+    elf::{Relocation, Section, SectionHeader, Symbol, SymbolHeader, SymbolNameGenerator},
+    elf_container::{ELF_HEADER_IDENT, ElfContainer, ElfHeader},
+    formats::{
+        FileData,
+        maplink::{read_maplink, write_maplink},
+    },
+    util::pointer::Pointer,
 };
 use vivibin::{HeapToken, WriteCtxImpl, WriteDomainExt};
 
@@ -238,11 +254,9 @@ fn write_symtab(
         let mut symbol_name_gen = SymbolNameGenerator::new();
         
         let mut symbols: Vec<(char, &mut SymbolDeclaration)> = symbol_declarations.iter_mut()
-            .flat_map(|symbol| {
-                match symbol.name {
+            .flat_map(|symbol| match symbol.name {
                     SymbolName::Internal(initial_char) => Some((initial_char, symbol)),
-                    _ => None
-                }
+                    _ => None,
             })
             .collect::<Vec<_>>();
         
