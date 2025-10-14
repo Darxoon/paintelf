@@ -1,12 +1,5 @@
 use std::{
-    cell::{Cell, RefCell},
-    cmp::Ordering,
-    collections::HashMap,
-    env, fs,
-    io::{Cursor, Read, Write},
-    path::{Path, PathBuf},
-    process::exit,
-    u32,
+    cell::{Cell, RefCell}, cmp::Ordering, collections::HashMap, env, fs, io::{Cursor, Read, Write}, panic, path::{Path, PathBuf}, process::exit, u32
 };
 
 use anyhow::{Result, anyhow, bail};
@@ -26,6 +19,13 @@ use paintelf::{
 use vivibin::{HeapToken, WriteCtxImpl, WriteDomainExt};
 
 fn main() -> Result<()> {
+    if !cfg!(debug_assertions) {
+        panic::set_hook(Box::new(|info| {
+            println!("An unexpected error occured! Please send the following message and \
+            file this crashed on to the developer (Darxoon) so this can be fixed.\n{}", info);
+        }));
+    }
+    
     let argv = env::args().collect::<Vec<_>>();
     
     if argv.len() < 2 || argv[1] == "-h" || argv[1] == "--help" {
@@ -60,7 +60,7 @@ fn main() -> Result<()> {
 
 fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     let input_file = fs::read_to_string(input_file_path)?;
-    let data: FileData = serde_yaml_bw::from_str(&input_file)?;
+    let data: FileData = serde_yaml_ng::from_str(&input_file)?;
     
     let mut block_offsets = Vec::new();
     
@@ -462,7 +462,7 @@ fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
     
     let mut reader: Cursor<&[u8]> = Cursor::new(&rodata_section.content);
     let maplink = read_maplink(&mut reader, domain)?;
-    let yaml = serde_yaml_bw::to_string(&maplink)?;
+    let yaml = serde_yaml_ng::to_string(&maplink)?;
     
     let out_path = input_file_path.with_extension("yaml");
     fs::write(out_path, yaml)?;
