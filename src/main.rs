@@ -6,7 +6,6 @@ use std::{
     io::{Cursor, Read, Write},
     panic,
     path::{Path, PathBuf},
-    process::exit,
 };
 
 use anyhow::{Result, anyhow, bail};
@@ -85,7 +84,7 @@ fn reassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
     let mut base_name = input_file_path.file_stem()
         .ok_or_else(|| anyhow!("Invalid file path {}", input_file_path.display()))?
         .to_owned();
-    base_name.push("_serialized.rodata");
+    base_name.push("_modified.rodata");
     let mut out_path = input_file_path.with_file_name(base_name);
     
     let mut symbol_indices = HashMap::new();
