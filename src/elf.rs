@@ -6,11 +6,27 @@ use indexmap::IndexMap;
 
 use crate::util::pointer::Pointer;
 
+/// Section flag which indicates that the section occupies memory at execution.
+pub const SHF_ALLOC: u32 = 0x2;
+/// Section flag which indicates that `sh_info` contains the index of another section header.
+pub const SHF_INFO_LINK: u32 = 0x40;
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, BinRead, BinWrite)]
+#[brw(repr = u32)]
+pub enum SectionType {
+    #[default]
+    None,
+    Progbits,
+    SymTable,
+    StringTable,
+    Rela,
+}
+
 #[derive(Debug, Clone, Default, BinRead, BinWrite)]
 #[brw(big)]
 pub struct SectionHeader {
 	pub sh_name: u32,
-	pub sh_type: u32,
+	pub sh_type: SectionType,
 	pub sh_flags: u32,
 	pub sh_addr: u32,
 	pub sh_offset: u32,

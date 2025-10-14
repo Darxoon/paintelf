@@ -11,7 +11,7 @@ use memchr::memmem;
 use vivibin::{Reader, Writer, align_to};
 
 use crate::{
-    elf::{Relocation, Section, SectionHeader, Symbol, SymbolHeader},
+    elf::{Relocation, Section, SectionHeader, SectionType, Symbol, SymbolHeader, SHF_ALLOC, SHF_INFO_LINK},
     util::{pointer::Pointer, read_string},
 };
 
@@ -59,6 +59,119 @@ impl ElfContainer {
             content_sections,
             meta_sections: IndexMap::new(),
         }
+    }
+    
+    pub fn add_content_section(&mut self, name: impl Into<String>, align: u32, content: Vec<u8>) {
+        self.add_content_section_inner(name.into(), align, content);
+    }
+    
+    fn add_content_section_inner(&mut self, name: String, align: u32, content: Vec<u8>) {
+        self.content_sections.insert(name.clone(), Section {
+            header: SectionHeader {
+                // overridden at serialization of container
+                sh_name: 0,
+                sh_type: SectionType::Progbits,
+                sh_flags: SHF_ALLOC,
+                sh_addr: 0,
+                // overridden at serialization of container
+                sh_offset: 0,
+                // overridden at serialization of container
+                sh_size: 0,
+                sh_link: 0,
+                sh_info: 0,
+                sh_addralign: align,
+                sh_entsize: 0,
+            },
+            name,
+            relocations: Some(IndexMap::new()),
+            content,
+        });
+    }
+    
+    pub fn add_content_section_with_relocations(
+        &mut self, name: impl Into<String>, align: u32, content: Vec<u8>, relocations: Vec<u8>,
+    ) {
+        fn inner(container: &mut ElfContainer, name: String, align: u32, content: Vec<u8>, relocations: Vec<u8>) {
+            let rela_name = format!(".rela{name}");
+            
+            container.add_content_section_inner(name, align, content);
+            
+            container.meta_sections.insert(rela_name.clone(), Section {
+                header: SectionHeader {
+                    // overridden at serialization of container
+                    sh_name: 0,
+                    sh_type: SectionType::Rela,
+                    sh_flags: SHF_INFO_LINK,
+                    sh_addr: 0,
+                    // overridden at serialization of container
+                    sh_offset: 0,
+                    // overridden at serialization of container
+                    sh_size: 0,
+                    // TODO: determine these fields automatically
+                    sh_link: 4,
+                    sh_info: 1,
+                    sh_addralign: align,
+                    sh_entsize: 0xc,
+                },
+                name: rela_name,
+                relocations: Some(IndexMap::new()),
+                content: relocations,
+            });
+        }
+        inner(self, name.into(), align, content, relocations);
+    }
+    
+    pub fn add_string_table_raw(&mut self, name: impl Into<String>, flags: u32, align: u32, content: Vec<u8>) {
+        fn inner(container: &mut ElfContainer, name: String, flags: u32, align: u32, content: Vec<u8>) {
+            container.meta_sections.insert(name.clone(), Section {
+                header: SectionHeader {
+                    // overridden at serialization of container
+                    sh_name: 0,
+                    sh_type: SectionType::StringTable,
+                    sh_flags: flags,
+                    sh_addr: 0,
+                    // overridden at serialization of container
+                    sh_offset: 0,
+                    // overridden at serialization of container
+                    sh_size: 0,
+                    sh_link: 0,
+                    sh_info: 0,
+                    sh_addralign: align,
+                    sh_entsize: 0,
+                },
+                name,
+                relocations: None,
+                content,
+            });
+        }
+        inner(self, name.into(), flags, align, content);
+    }
+    
+    pub fn add_symbol_table_raw(&mut self, name: impl Into<String>, flags: u32, align: u32, content: Vec<u8>) {
+        fn inner(container: &mut ElfContainer, name: String, flags: u32, align: u32, content: Vec<u8>) {
+            container.meta_sections.insert(name.clone(), Section {
+                header: SectionHeader {
+                    // overridden at serialization of container
+                    sh_name: 0,
+                    sh_type: SectionType::SymTable,
+                    sh_flags: flags,
+                    sh_addr: 0,
+                    // overridden at serialization of container
+                    sh_offset: 0,
+                    // overridden at serialization of container
+                    sh_size: 0,
+                    // TODO: determine these fields automatically
+                    sh_link: 5,
+                    sh_info: 0x2202,
+                    sh_addralign: align,
+                    sh_entsize: 0x10,
+                },
+                name,
+                relocations: None,
+                content,
+            });
+        }
+        inner(self, name.into(), flags, align, content);
     }
     
     pub fn from_reader(reader: &mut impl Reader) -> Result<Self> {

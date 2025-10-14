@@ -1,5 +1,12 @@
 use std::{
-    cell::{Cell, RefCell}, cmp::Ordering, collections::HashMap, env, fs, io::{Cursor, Read, Write}, panic, path::{Path, PathBuf}, process::exit, u32
+    cell::{Cell, RefCell},
+    cmp::Ordering,
+    collections::HashMap,
+    env, fs,
+    io::{Cursor, Read, Write},
+    panic,
+    path::{Path, PathBuf},
+    process::exit,
 };
 
 use anyhow::{Result, anyhow, bail};
@@ -8,7 +15,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use paintelf::{
     ElfReadDomain, ElfWriteDomain, RelDeclaration, SymbolDeclaration, SymbolName,
-    elf::{Relocation, Section, SectionHeader, Symbol, SymbolHeader, SymbolNameGenerator},
+    elf::{Relocation, Section, Symbol, SymbolHeader, SymbolNameGenerator},
     elf_container::{ELF_HEADER_IDENT, ElfContainer, ElfHeader},
     formats::{
         FileData,
@@ -122,98 +129,12 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     };
     let mut result = ElfContainer::new(header);
     
-    // TODO: provide a nicer api for this
-    result.content_sections.insert(".rodata".to_string(), Section {
-        header: SectionHeader {
-            sh_name: 0,
-            sh_type: 1,
-            sh_flags: 2,
-            sh_addr: 0,
-            sh_offset: 0,
-            sh_size: 0,
-            sh_link: 0,
-            sh_info: 0,
-            sh_addralign: 4,
-            sh_entsize: 0,
-        },
-        name: ".rodata".to_string(),
-        relocations: Some(IndexMap::new()),
-        content: result_buffer,
-    });
+    result.add_content_section_with_relocations(".rodata", 4, result_buffer, rela_rodata);
     
     const SH_STRING_TAB: &[u8] = b"\0.symtab\0.strtab\0.shstrtab\0.rela.rodata\0";
-    
-    result.meta_sections.insert(".shstrtab".to_string(), Section {
-        header: SectionHeader {
-            sh_name: 0,
-            sh_type: 3,
-            sh_flags: 0,
-            sh_addr: 0,
-            sh_offset: 0,
-            sh_size: 0,
-            sh_link: 0,
-            sh_info: 0,
-            sh_addralign: 1,
-            sh_entsize: 0,
-        },
-        name: ".shstrtab".to_string(),
-        relocations: None,
-        content: SH_STRING_TAB.to_owned(),
-    });
-    
-    result.meta_sections.insert(".symtab".to_string(), Section {
-        header: SectionHeader {
-            sh_name: 0,
-            sh_type: 2,
-            sh_flags: 0,
-            sh_addr: 0,
-            sh_offset: 0,
-            sh_size: 0,
-            sh_link: 5,
-            sh_info: 0x2202,
-            sh_addralign: 4,
-            sh_entsize: 0x10,
-        },
-        name: ".symtab".to_string(),
-        relocations: None,
-        content: symtab,
-    });
-    
-    result.meta_sections.insert(".strtab".to_string(), Section {
-        header: SectionHeader {
-            sh_name: 0,
-            sh_type: 3,
-            sh_flags: 0,
-            sh_addr: 0,
-            sh_offset: 0,
-            sh_size: 0,
-            sh_link: 0,
-            sh_info: 0,
-            sh_addralign: 1,
-            sh_entsize: 0,
-        },
-        name: ".strtab".to_string(),
-        relocations: None,
-        content: strtab,
-    });
-    
-    result.meta_sections.insert(".rela.rodata".to_string(), Section {
-        header: SectionHeader {
-            sh_name: 0,
-            sh_type: 4,
-            sh_flags: 0x40,
-            sh_addr: 0,
-            sh_offset: 0,
-            sh_size: 0,
-            sh_link: 4,
-            sh_info: 1,
-            sh_addralign: 4,
-            sh_entsize: 0xc,
-        },
-        name: ".rela.rodata".to_string(),
-        relocations: None,
-        content: rela_rodata,
-    });
+    result.add_string_table_raw(".shstrtab", 0, 1, SH_STRING_TAB.to_owned());
+    result.add_symbol_table_raw(".symtab", 0, 4, symtab);
+    result.add_string_table_raw(".strtab", 0, 1, strtab);
     
     // write resulting elf
     let out_elf = result.to_bytes()?;
