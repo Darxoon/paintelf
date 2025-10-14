@@ -10,7 +10,7 @@ byteorder = "1.5.0"
 indexmap = "2.11.4"
 memchr = "2.7.6"
 serde = { version = "1.0.228", features = ["derive"] }
-serde_yaml_ng = "0.10.0"
+serde_yaml_bw = "2.4.1"
 vivibin = { path = "vivibin" }
 
 [profile.release]

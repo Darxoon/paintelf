@@ -67,7 +67,7 @@ fn main() -> Result<()> {
 
 fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     let input_file = fs::read_to_string(input_file_path)?;
-    let data: FileData = serde_yaml_ng::from_str(&input_file)?;
+    let data: FileData = serde_yaml_bw::from_str(&input_file)?;
     
     let mut block_offsets = Vec::new();
     
@@ -383,7 +383,7 @@ fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
     
     let mut reader: Cursor<&[u8]> = Cursor::new(&rodata_section.content);
     let maplink = read_maplink(&mut reader, domain)?;
-    let yaml = serde_yaml_ng::to_string(&maplink)?;
+    let yaml = serde_yaml_bw::to_string(&maplink)?;
     
     let out_path = input_file_path.with_extension("yaml");
     fs::write(out_path, yaml)?;
