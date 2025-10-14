@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::{Cursor, SeekFrom}, mem};
+use std::{collections::HashMap, io::{Cursor, SeekFrom, Write}, mem::{self, offset_of}};
 
 use anyhow::{anyhow, bail, Error, Result};
 use binrw::{BinRead, BinWrite};
@@ -12,6 +12,7 @@ pub const ELF_HEADER_IDENT: [u8; 16] = [0x7F, 0x45, 0x4C, 0x46, 0x01, 0x02, 0x01
 
 #[derive(Debug, Clone, BinRead, BinWrite)]
 #[brw(big)]
+#[repr(C)]
 pub struct ElfHeader {
     pub e_ident: [u8; 16],
     pub e_type: u16,
@@ -42,10 +43,13 @@ pub struct ElfContainer {
 
 impl ElfContainer {
     pub fn new(header: ElfHeader) -> Self {
+        let mut content_sections = IndexMap::new();
+        content_sections.insert("".to_string(), Section::default());
+        
         Self {
             header,
             symbols: IndexMap::new(),
-            content_sections: IndexMap::new(),
+            content_sections,
             meta_sections: IndexMap::new(),
         }
     }
@@ -114,6 +118,9 @@ impl ElfContainer {
                     symbol_headers = Some(symtab);
                     meta_sections.insert(name, section);
                 },
+                ".shstrtab" => {
+                    meta_sections.insert(name, section);
+                },
                 _ => {
                     content_sections.insert(name, section);
                 },
@@ -151,16 +158,18 @@ impl ElfContainer {
         })
     }
     
-    pub fn to_writer(&self, writer: &mut impl Writer) -> Result<()> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        let mut writer = Cursor::new(Vec::new());
+        
         // write header
-        self.header.write(writer)?;
+        self.header.write(&mut writer)?;
         
         let mut section_offsets: HashMap<String, Pointer> = HashMap::new();
         
         // write content sections
         for section in self.content_sections.values() {
-            align_to(writer, section.header.sh_addralign as usize)?;
-            section_offsets.insert(section.name.clone(), Pointer::current(writer)?);
+            align_to(&mut writer, section.header.sh_addralign as usize)?;
+            section_offsets.insert(section.name.clone(), Pointer::current(&mut writer)?);
             writer.write_all(&section.content)?;
         }
         
@@ -170,8 +179,8 @@ impl ElfContainer {
                 continue;
             }
             
-            align_to(writer, section.header.sh_addralign as usize)?;
-            section_offsets.insert(section.name.clone(), Pointer::current(writer)?);
+            align_to(&mut writer, section.header.sh_addralign as usize)?;
+            section_offsets.insert(section.name.clone(), Pointer::current(&mut writer)?);
             writer.write_all(&section.content)?;
         }
         
@@ -181,38 +190,43 @@ impl ElfContainer {
                 continue;
             }
             
-            align_to(writer, section.header.sh_addralign as usize)?;
-            section_offsets.insert(section.name.clone(), Pointer::current(writer)?);
+            align_to(&mut writer, section.header.sh_addralign as usize)?;
+            section_offsets.insert(section.name.clone(), Pointer::current(&mut writer)?);
             writer.write_all(&section.content)?;
         }
         
         // write section header table
-        let shstrtab = &self.content_sections[".shstrtab"];
+        let sh_offset = Pointer::current(&mut writer)?;
+        let shstrtab = &self.meta_sections[".shstrtab"];
         
-        SectionHeader::default().write(writer)?;
+        SectionHeader::default().write(&mut writer)?;
         
         for section in self.content_sections.values() {
-            if section.name.is_empty() || section.name == ".shstrtab" {
+            if section.name.is_empty() {
                 continue;
             }
             
-            Self::write_section_header(writer, &section_offsets, &shstrtab.content, section)?;
+            Self::write_section_header(&mut writer, &section_offsets, &shstrtab.content, section)?;
             
             let relocation_section = self.meta_sections.get(&format!(".rela{}", &section.name));
             if let Some(relocation_section) = relocation_section {
-                Self::write_section_header(writer, &section_offsets, &shstrtab.content, relocation_section)?;
+                Self::write_section_header(&mut writer, &section_offsets, &shstrtab.content, relocation_section)?;
             }
         }
         
-        Self::write_section_header(writer, &section_offsets, &shstrtab.content, shstrtab)?;
+        Self::write_section_header(&mut writer, &section_offsets, &shstrtab.content, shstrtab)?;
         
         let symtab = &self.meta_sections[".symtab"];
-        Self::write_section_header(writer, &section_offsets, &shstrtab.content, symtab)?;
+        Self::write_section_header(&mut writer, &section_offsets, &shstrtab.content, symtab)?;
         
         let strtab = &self.meta_sections[".strtab"];
-        Self::write_section_header(writer, &section_offsets, &shstrtab.content, strtab)?;
+        Self::write_section_header(&mut writer, &section_offsets, &shstrtab.content, strtab)?;
         
-        Ok(())
+        // apply section header offset
+        writer.set_position(offset_of!(ElfHeader, e_shoff) as u64);
+        sh_offset.write(&mut writer)?;
+        
+        Ok(writer.into_inner())
     }
     
     fn write_section_header(writer: &mut impl Writer, section_offsets: &HashMap<String, Pointer>, shstrtab: &[u8], section: &Section) -> Result<()> {

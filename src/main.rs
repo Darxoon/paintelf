@@ -107,8 +107,6 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     let mut result = ElfContainer::new(header);
     
     // TODO: provide a nicer api for this
-    result.content_sections.insert("".to_string(), Section::default());
-    
     result.content_sections.insert(".rodata".to_string(), Section {
         header: SectionHeader {
             sh_name: 0,
@@ -129,7 +127,7 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     
     const SH_STRING_TAB: &[u8] = b"\0.symtab\0.strtab\0.shstrtab\0.rela.rodata\0";
     
-    result.content_sections.insert(".shstrtab".to_string(), Section {
+    result.meta_sections.insert(".shstrtab".to_string(), Section {
         header: SectionHeader {
             sh_name: 0,
             sh_type: 3,
@@ -145,24 +143,6 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
         name: ".shstrtab".to_string(),
         relocations: None,
         content: SH_STRING_TAB.to_owned(),
-    });
-    
-    result.meta_sections.insert(".strtab".to_string(), Section {
-        header: SectionHeader {
-            sh_name: 0,
-            sh_type: 3,
-            sh_flags: 0,
-            sh_addr: 0,
-            sh_offset: 0,
-            sh_size: 0,
-            sh_link: 0,
-            sh_info: 0,
-            sh_addralign: 1,
-            sh_entsize: 0,
-        },
-        name: ".strtab".to_string(),
-        relocations: None,
-        content: strtab,
     });
     
     result.meta_sections.insert(".symtab".to_string(), Section {
@@ -183,6 +163,24 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
         content: symtab,
     });
     
+    result.meta_sections.insert(".strtab".to_string(), Section {
+        header: SectionHeader {
+            sh_name: 0,
+            sh_type: 3,
+            sh_flags: 0,
+            sh_addr: 0,
+            sh_offset: 0,
+            sh_size: 0,
+            sh_link: 0,
+            sh_info: 0,
+            sh_addralign: 1,
+            sh_entsize: 0,
+        },
+        name: ".strtab".to_string(),
+        relocations: None,
+        content: strtab,
+    });
+    
     result.meta_sections.insert(".rela.rodata".to_string(), Section {
         header: SectionHeader {
             sh_name: 0,
@@ -201,12 +199,11 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
         content: rela_rodata,
     });
     
-    let mut writer = Cursor::new(Vec::new());
-    result.to_writer(&mut writer)?;
-    
     // write resulting elf
+    let out_elf = result.to_bytes()?;
+    
     out_path.set_extension("elf");
-    fs::write(&out_path, writer.get_ref())?;
+    fs::write(&out_path, &out_elf)?;
     
     Ok(())
 }
@@ -440,10 +437,9 @@ fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
         write_section_debug(&elf_file.meta_sections, ".strtab")?;
         
         // try re-serializing elf file
-        let mut writer = Cursor::new(Vec::new());
-        elf_file.to_writer(&mut writer)?;
+        let out_elf = elf_file.to_bytes()?;
         let out_path = input_file_path.with_extension("elf2");
-        fs::write(&out_path, writer.get_ref())?;
+        fs::write(&out_path, &out_elf)?;
         println!("Re-serialized elf file to {}", out_path.file_name().unwrap().display());
     }
     
