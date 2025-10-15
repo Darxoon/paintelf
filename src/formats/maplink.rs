@@ -8,7 +8,7 @@ use vivibin::{
 };
 
 use crate::{
-    formats::FileData, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, RelDeclaration, SymbolDeclaration, SymbolName, WriteStringArgs
+    formats::FileData, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, SymbolDeclaration, SymbolName, WriteStringArgs
 };
 
 pub fn read_maplink<'a>(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<FileData> {
@@ -77,7 +77,7 @@ impl<D: CanRead<String> + CanRead<Pointer>> Readable<D> for MaplinkArea {
     }
 }
 
-impl<D: CanWriteWithArgs<String, WriteStringArgs> + CanWrite<SymbolDeclaration> + CanWrite<RelDeclaration>> Writable<D> for MaplinkArea {
+impl<D: CanWriteWithArgs<String, WriteStringArgs> + CanWrite<SymbolDeclaration>> Writable<D> for MaplinkArea {
     fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: D) -> Result<()> {
         // TODO: turning off deduplication is a hack, figure out serialization order better
         domain.write_args(ctx, &self.map_name, WriteStringArgs { deduplicate: false })?;
@@ -90,11 +90,6 @@ impl<D: CanWriteWithArgs<String, WriteStringArgs> + CanWrite<SymbolDeclaration> 
             }
             links_size = ctx.position()? as usize - start_pos;
             Ok(())
-        })?;
-        let current_pos = ctx.heap_token_at_current_pos()?;
-        domain.write(ctx, &RelDeclaration {
-            base_location: current_pos,
-            target_location: token,
         })?;
         ctx.write_token::<4>(token)?;
         domain.write(ctx, &SymbolDeclaration {

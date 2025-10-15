@@ -179,8 +179,8 @@ pub struct SymbolDeclaration {
 
 #[derive(Clone, Debug)]
 pub struct RelDeclaration {
-    pub base_location: HeapToken,
-    pub target_location: HeapToken,
+    pub base_location: usize,
+    pub target_location: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -200,6 +200,7 @@ pub struct ElfWriteDomain<'a> {
     symbol_declarations: &'a RefCell<Vec<SymbolDeclaration>>,
     relocations: &'a RefCell<Vec<RelDeclaration>>,
     prev_string_len: &'a Cell<usize>,
+    is_debug: bool,
 }
 
 impl EndianSpecific for ElfWriteDomain<'_> {
@@ -214,12 +215,14 @@ impl<'a> ElfWriteDomain<'a> {
         symbol_declarations: &'a RefCell<Vec<SymbolDeclaration>>,
         relocations: &'a RefCell<Vec<RelDeclaration>>,
         prev_string_len: &'a Cell<usize>,
+        is_debug: bool,
     ) -> Self {
         Self {
             string_map,
             symbol_declarations,
             relocations,
             prev_string_len,
+            is_debug,
         }
     }
     
@@ -272,13 +275,7 @@ impl<'a> ElfWriteDomain<'a> {
             new_token
         };
         
-        // TODO: put Relocation into apply_reference instead
-        let current_pos = ctx.heap_token_at_current_pos()?;
         ctx.write_token::<4>(token)?;
-        self.put_relocation(RelDeclaration {
-            base_location: current_pos,
-            target_location: token,
-        });
         Ok(())
     }
     
@@ -313,8 +310,14 @@ impl WriteDomain for ElfWriteDomain<'_> {
     }
 
     fn apply_reference(self, writer: &mut impl Writer, heap_offset: usize) -> Result<()> {
-        // TODO: reenable this for debug purposes
-        self.write_pointer_debug(writer, Pointer(heap_offset as u32))?;
+        self.put_relocation(RelDeclaration {
+            base_location: writer.position()? as usize,
+            target_location: heap_offset,
+        });
+        
+        if self.is_debug {
+            self.write_pointer_debug(writer, Pointer(heap_offset as u32))?;
+        }
         Ok(())
     }
 }
@@ -335,13 +338,6 @@ impl CanWriteWithArgs<String, WriteStringArgs> for ElfWriteDomain<'_> {
 impl CanWrite<SymbolDeclaration> for ElfWriteDomain<'_> {
     fn write(self, _: &mut impl WriteCtx, value: &SymbolDeclaration) -> Result<()> {
         self.put_symbol(value.clone());
-        Ok(())
-    }
-}
-
-impl CanWrite<RelDeclaration> for ElfWriteDomain<'_> {
-    fn write(self, _: &mut impl WriteCtx, value: &RelDeclaration) -> Result<()> {
-        self.put_relocation(value.clone());
         Ok(())
     }
 }

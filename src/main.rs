@@ -22,7 +22,7 @@ use paintelf::{
     },
     util::pointer::Pointer,
 };
-use vivibin::{HeapToken, WriteCtxImpl, WriteDomainExt};
+use vivibin::{WriteCtxImpl, WriteDomainExt};
 
 fn main() -> Result<()> {
     if !cfg!(debug_assertions) {
@@ -68,7 +68,7 @@ fn reassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
             let symbol_declarations = RefCell::new(Vec::new());
             let relocations = RefCell::new(Vec::new());
             let prev_string_len = Cell::new(0);
-            let domain = ElfWriteDomain::new(&string_map, &symbol_declarations, &relocations, &prev_string_len);
+            let domain = ElfWriteDomain::new(&string_map, &symbol_declarations, &relocations, &prev_string_len, is_debug);
             
             let mut ctx: WriteCtxImpl<ElfWriteDomain> = ElfWriteDomain::new_ctx();
             write_maplink(&mut ctx, domain, &maplink_areas)?;
@@ -89,7 +89,7 @@ fn reassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
     
     let mut symbol_indices = HashMap::new();
     let (symtab, strtab) = write_symtab(&block_offsets, &mut symbol_indices, &mut symbol_declarations)?;
-    let rela_rodata = write_relocations(&block_offsets, &symbol_indices, &mut relocations)?;
+    let rela_rodata = write_relocations(&symbol_indices, &mut relocations)?;
     
     if is_debug {
         // write individual sections
@@ -139,8 +139,7 @@ fn reassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
 }
 
 fn write_relocations(
-    block_offsets: &[usize],
-    symbol_indices: &HashMap<HeapToken, usize>,
+    symbol_indices: &HashMap<usize, usize>,
     relocations: &mut [RelDeclaration],
 ) -> Result<Vec<u8>> {
     relocations.sort_by_key(|rel| rel.base_location);
@@ -148,10 +147,9 @@ fn write_relocations(
     let mut writer = Cursor::new(Vec::new());
     
     for relocation in relocations {
-        let base_location = relocation.base_location.resolve(block_offsets);
         let symbol_idx = symbol_indices.get(&relocation.target_location).unwrap();
         
-        let raw = Relocation::new(base_location as u32, (symbol_idx << 8 | 1) as u32, 0);
+        let raw = Relocation::new(relocation.base_location as u32, (symbol_idx << 8 | 1) as u32, 0);
         raw.write(&mut writer)?;
     }
     
@@ -160,7 +158,7 @@ fn write_relocations(
 
 fn write_symtab(
     block_offsets: &[usize],
-    out_symbol_indices: &mut HashMap<HeapToken, usize>,
+    out_symbol_indices: &mut HashMap<usize, usize>,
     symbol_declarations: &mut Vec<SymbolDeclaration>,
 ) -> Result<(Vec<u8>, Vec<u8>)> {
     // name unnamed internal symbols
@@ -296,7 +294,7 @@ fn write_symtab(
         };
         
         // serialize symbol
-        out_symbol_indices.insert(symbol.offset, symbol_count);
+        out_symbol_indices.insert(symbol.offset.resolve(block_offsets), symbol_count);
         symbol_count += 1;
         BinWrite::write(&SymbolHeader {
             st_name: name_ptr,
