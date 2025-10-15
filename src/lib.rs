@@ -11,8 +11,7 @@ use anyhow::{Result, anyhow, ensure};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use vivibin::{
-    CanRead, CanWrite, EndianSpecific, Endianness, HeapToken, ReadDomain, Reader, WriteCtx,
-    WriteDomain, Writer,
+    CanRead, CanWrite, CanWriteWithArgs, EndianSpecific, Endianness, HeapToken, ReadDomain, Reader, WriteCtx, WriteDomain, Writer
 };
 
 use crate::{
@@ -184,6 +183,17 @@ pub struct RelDeclaration {
     pub target_location: HeapToken,
 }
 
+#[derive(Debug, Clone)]
+pub struct WriteStringArgs {
+    pub deduplicate: bool,
+}
+
+impl Default for WriteStringArgs {
+    fn default() -> Self {
+        Self { deduplicate: true }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct ElfWriteDomain<'a> {
     string_map: &'a RefCell<HashMap<String, HeapToken>>,
@@ -213,10 +223,10 @@ impl<'a> ElfWriteDomain<'a> {
         }
     }
     
-    pub fn write_string(self, ctx: &mut impl WriteCtx, value: &str) -> Result<()> {
+    pub fn write_string(self, ctx: &mut impl WriteCtx, value: &str, args: WriteStringArgs) -> Result<()> {
         // Search for if this string has already been written before
         // TODO: account for substrings (use crate memchr?)
-        let existing_token = if ctx.position()? < 0xc32c { 
+        let existing_token = if args.deduplicate && ctx.position()? < 0xc32c { 
             self.string_map.borrow().get(value).copied()
         } else {
             None
@@ -230,7 +240,11 @@ impl<'a> ElfWriteDomain<'a> {
             } else {
                 4
             };
-            self.prev_string_len.set(value.len());
+            
+            // TODO: this is a hack
+            if args.deduplicate {
+                self.prev_string_len.set(value.len());
+            }
             
             let mut name_size: usize = 0;
             let new_token = ctx.allocate_next_block_aligned(alignment, |ctx| {
@@ -249,18 +263,22 @@ impl<'a> ElfWriteDomain<'a> {
                 size: name_size as u32,
             });
             
-            self.string_map
-                .borrow_mut()
-                .insert(value.to_string(), new_token);
+            if args.deduplicate {
+                self.string_map
+                    .borrow_mut()
+                    .insert(value.to_string(), new_token);
+            }
+            
             new_token
         };
         
+        // TODO: put Relocation into apply_reference instead
         let current_pos = ctx.heap_token_at_current_pos()?;
+        ctx.write_token::<4>(token)?;
         self.put_relocation(RelDeclaration {
             base_location: current_pos,
             target_location: token,
         });
-        ctx.write_token::<4>(token)?;
         Ok(())
     }
     
@@ -287,23 +305,29 @@ impl WriteDomain for ElfWriteDomain<'_> {
         
         if type_id == TypeId::of::<String>() {
             let value = unsafe { transmute::<&T, &String>(value) };
-            self.write_string(ctx, value)?;
+            self.write_string(ctx, value, WriteStringArgs::default())?;
             Ok(Some(()))
         } else {
             Ok(None)
         }
     }
 
-    fn apply_reference(self, _writer: &mut impl Writer, _heap_offset: usize) -> Result<()> {
+    fn apply_reference(self, writer: &mut impl Writer, heap_offset: usize) -> Result<()> {
         // TODO: reenable this for debug purposes
-        // self.write_pointer_debug(writer, Pointer(heap_offset as u32))
+        self.write_pointer_debug(writer, Pointer(heap_offset as u32))?;
         Ok(())
     }
 }
 
 impl CanWrite<String> for ElfWriteDomain<'_> {
     fn write(self, ctx: &mut impl WriteCtx, value: &String) -> Result<()> {
-        self.write_string(ctx, value)
+        self.write_string(ctx, value, WriteStringArgs::default())
+    }
+}
+
+impl CanWriteWithArgs<String, WriteStringArgs> for ElfWriteDomain<'_> {
+    fn write_args(self, ctx: &mut impl WriteCtx, value: &String, args: WriteStringArgs) -> Result<()> {
+        self.write_string(ctx, value, args)
     }
 }
 

@@ -4,13 +4,11 @@ use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
-    CanRead, CanWrite, ReadDomainExt, Readable, Reader, Writable, WriteCtx, WriteDomainExt, Writer,
-    scoped_reader_pos,
+    scoped_reader_pos, CanRead, CanWrite, CanWriteWithArgs, ReadDomainExt, Readable, Reader, Writable, WriteCtx, WriteDomainExt, Writer
 };
 
 use crate::{
-    ElfReadDomain, ElfWriteDomain, RelDeclaration, SymbolDeclaration, SymbolName,
-    formats::FileData, util::pointer::Pointer,
+    formats::FileData, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, RelDeclaration, SymbolDeclaration, SymbolName, WriteStringArgs
 };
 
 pub fn read_maplink<'a>(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<FileData> {
@@ -79,31 +77,10 @@ impl<D: CanRead<String> + CanRead<Pointer>> Readable<D> for MaplinkArea {
     }
 }
 
-impl<D: CanWrite<String> + CanWrite<SymbolDeclaration> + CanWrite<RelDeclaration>> Writable<D> for MaplinkArea {
+impl<D: CanWriteWithArgs<String, WriteStringArgs> + CanWrite<SymbolDeclaration> + CanWrite<RelDeclaration>> Writable<D> for MaplinkArea {
     fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: D) -> Result<()> {
-        // TODO: this is a hack, figure out string serialization order better
-        // domain.write(ctx, &self.map_name)?;
-        let mut name_size: usize = 0;
-        let token = ctx.allocate_next_block_aligned(4, |ctx| {
-            let start_pos = ctx.position()? as usize;
-            ctx.write_c_str(&self.map_name)?;
-            if self.map_name.len() > 2 {
-                ctx.align_to(4)?;
-            }
-            name_size = ctx.position()? as usize - start_pos;
-            Ok(())
-        })?;
-        let current_pos = ctx.heap_token_at_current_pos()?;
-        domain.write(ctx, &RelDeclaration {
-            base_location: current_pos,
-            target_location: token,
-        })?;
-        ctx.write_token::<4>(token)?;
-        domain.write(ctx, &SymbolDeclaration {
-            name: SymbolName::Internal('.'),
-            offset: token,
-            size: name_size as u32,
-        })?;
+        // TODO: turning off deduplication is a hack, figure out serialization order better
+        domain.write_args(ctx, &self.map_name, WriteStringArgs { deduplicate: false })?;
         
         let mut links_size: usize = 0;
         let token = ctx.allocate_next_block_aligned(4, |ctx| {

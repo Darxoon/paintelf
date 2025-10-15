@@ -160,7 +160,7 @@ fn write_relocations(
 
 fn write_symtab(
     block_offsets: &[usize],
-    symbol_indices: &mut HashMap<HeapToken, usize>,
+    out_symbol_indices: &mut HashMap<HeapToken, usize>,
     symbol_declarations: &mut Vec<SymbolDeclaration>,
 ) -> Result<(Vec<u8>, Vec<u8>)> {
     // name unnamed internal symbols
@@ -296,7 +296,7 @@ fn write_symtab(
         };
         
         // serialize symbol
-        symbol_indices.insert(symbol.offset, symbol_count);
+        out_symbol_indices.insert(symbol.offset, symbol_count);
         symbol_count += 1;
         BinWrite::write(&SymbolHeader {
             st_name: name_ptr,
