@@ -95,7 +95,7 @@ impl<D: CanWriteWithArgs<String, WriteStringArgs> + CanWrite<SymbolDeclaration>>
     }
 }
 
-#[derive(Clone, Debug, Readable, Serialize, Deserialize)]
+#[derive(Clone, Debug, Readable, Writable, Serialize, Deserialize)]
 pub struct Link {
     #[require_domain]
     pub id: String,
@@ -113,25 +113,4 @@ pub struct Link {
     pub enter_function: String,
     pub exit_function: String,
     pub field_0x38: String,
-}
-
-impl<D: CanWrite<String>> Writable<D> for Link {
-    fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
-        domain.write(ctx, &self.id)?;
-        domain.write(ctx, &self.destination)?;
-        domain.write(ctx, &self.link_type)?;
-        domain.write(ctx, &self.zone_id)?;
-        domain.write_fallback::<f32>(ctx, &self.player_direction)?;
-        domain.write(ctx, &self.player_facing)?;
-        domain.write(ctx, &self.door_type)?;
-        domain.write(ctx, &self.field_0x1c)?;
-        domain.write(ctx, &self.pipe_cam_script_enter)?;
-        domain.write(ctx, &self.pipe_cam_script_exit)?;
-        domain.write_fallback::<u32>(ctx, &self.field_0x28)?;
-        domain.write(ctx, &self.field_0x2c)?;
-        domain.write(ctx, &self.enter_function)?;
-        domain.write(ctx, &self.exit_function)?;
-        domain.write(ctx, &self.field_0x38)?;
-        Ok(())
-    }
 }
