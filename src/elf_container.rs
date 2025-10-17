@@ -203,7 +203,7 @@ impl ElfContainer {
             
             all_section_names.push(name.clone());
             
-            if name.starts_with(".rela") {
+            if let Some(original_section_name) = name.strip_prefix(".rela") {
                 let relocation_count = section.content.len() / mem::size_of::<Relocation>();
                 let mut reader = Cursor::new(section.content.as_slice());
                 
@@ -214,7 +214,7 @@ impl ElfContainer {
                     })
                     .collect::<Result<_>>()?;
                 
-                let original_section: &mut Section = content_sections.get_mut(&name[5..])
+                let original_section: &mut Section = content_sections.get_mut(original_section_name)
                     .ok_or_else(|| anyhow!("Could not find section {}", &name[5..]))?;
                 original_section.relocations = Some(relocations);
                 
@@ -350,7 +350,7 @@ impl ElfContainer {
     }
     
     fn write_section_header(writer: &mut impl Writer, section_offsets: &HashMap<String, Pointer>, shstrtab: &[u8], section: &Section) -> Result<()> {
-        let name_offset = memmem::find(&shstrtab, section.name.as_bytes())
+        let name_offset = memmem::find(shstrtab, section.name.as_bytes())
             .unwrap_or(0);
         
         let header = SectionHeader {

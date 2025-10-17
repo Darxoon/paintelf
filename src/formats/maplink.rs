@@ -11,7 +11,7 @@ use crate::{
     formats::FileData, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, SymbolDeclaration, SymbolName, WriteStringArgs
 };
 
-pub fn read_maplink<'a>(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<FileData> {
+pub fn read_maplink(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<FileData> {
     let data_count_symbol = domain.find_symbol("dataCount__Q3_4data3fld7maplink")?;
     reader.seek(SeekFrom::Start(data_count_symbol.offset().into()))?;
     let data_count = reader.read_u32::<BigEndian>()?;

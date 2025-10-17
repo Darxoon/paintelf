@@ -69,7 +69,7 @@ impl<'a> ElfReadDomain<'a> {
             .ok_or_else(|| anyhow!("Could not find symbol at index {}", relocation.info >> 8))?
             .1;
         
-        return Ok(symbol.offset().into());
+        Ok(symbol.offset().into())
     }
 }
 
@@ -134,12 +134,7 @@ pub enum SymbolName {
 
 impl SymbolName {
     pub fn is_internal(&self) -> bool {
-        match self {
-            SymbolName::Internal(_) => true,
-            SymbolName::InternalNamed(_) => true,
-            SymbolName::InternalUnmangled(_) => true,
-            _ => false,
-        }
+        matches!(self, SymbolName::Internal(_) | SymbolName::InternalNamed(_) | SymbolName::InternalUnmangled(_))
     }
     
     pub fn as_str(&self) -> Option<&str> {

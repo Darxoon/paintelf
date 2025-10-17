@@ -271,13 +271,13 @@ fn write_symtab(
     symbol_declarations.sort_by_key(|symbol| symbol.offset.resolve(block_offsets));
     
     let mut strtab = Cursor::new(Vec::new());
-    strtab.write(b"\0data_fld_maplink.cpp\0")?;
+    strtab.write_all(b"\0data_fld_maplink.cpp\0")?;
     
     let mut write_symbol: _ = |writer: &mut Cursor<Vec<u8>>, symbol: &SymbolDeclaration, st_info: u8| -> Result<()> {
         // serialize name
         let name_ptr = if let Some(symbol_name) = symbol.name.as_str() {
             let name_ptr = Pointer::current(&mut strtab)?;
-            strtab.write(symbol_name.as_bytes())?;
+            strtab.write_all(symbol_name.as_bytes())?;
             strtab.write_u8(0)?;
             name_ptr.into()
         } else {
@@ -361,7 +361,7 @@ fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
     }
     
     // parse maplink file
-    let domain = ElfReadDomain::new(&rodata_section.content, &rodata_relocations, &elf_file.symbols);
+    let domain = ElfReadDomain::new(&rodata_section.content, rodata_relocations, &elf_file.symbols);
     
     let mut reader: Cursor<&[u8]> = Cursor::new(&rodata_section.content);
     let maplink = read_maplink(&mut reader, domain)?;
