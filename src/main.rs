@@ -107,10 +107,10 @@ fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
         }
         
         // try re-serializing elf file without going through content
-        test_reserialize_directly(input_file_path, &elf_file_raw, &elf_file)?;
+        test_reserialize_directly(input_file_path, true, &elf_file_raw, &elf_file)?;
         
         // try re-serializing elf file from just content
-        test_reserialize_from_content(input_file_path, &elf_file, &elf_file_raw, &maplink)?;
+        test_reserialize_from_content(input_file_path, true, &elf_file, &elf_file_raw, &maplink)?;
     }
     
     Ok(())

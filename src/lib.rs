@@ -14,6 +14,9 @@ pub mod formats;
 pub mod matching;
 pub mod util;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Clone, Debug)]
 pub enum SymbolName {
     None,
