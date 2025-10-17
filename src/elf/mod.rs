@@ -6,6 +6,8 @@ use indexmap::IndexMap;
 
 use crate::util::pointer::Pointer;
 
+pub mod container;
+
 /// Section flag which indicates that the section occupies memory at execution.
 pub const SHF_ALLOC: u32 = 0x2;
 /// Section flag which indicates that `sh_info` contains the index of another section header.

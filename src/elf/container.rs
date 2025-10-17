@@ -61,6 +61,16 @@ impl ElfContainer {
         }
     }
     
+    pub fn get_section(&self, name: &str) -> Option<&Section> {
+        if let Some(section) = self.content_sections.get(name) {
+            Some(section)
+        } else if let Some(section) = self.meta_sections.get(name) {
+            Some(section)
+        } else {
+            None
+        }
+    }
+    
     pub fn add_content_section(&mut self, name: impl Into<String>, align: u32, content: Vec<u8>) {
         self.add_content_section_inner(name.into(), align, content);
     }

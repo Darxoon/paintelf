@@ -160,7 +160,7 @@ pub struct ElfWriteDomain {
     pub string_map: HashMap<String, HeapToken>,
     pub symbol_declarations: Vec<SymbolDeclaration>,
     pub relocations: Vec<RelDeclaration>,
-    pub is_debug: bool,
+    pub apply_debug_relocations: bool,
     prev_string_len: usize,
 }
 
@@ -171,12 +171,12 @@ impl EndianSpecific for ElfWriteDomain {
 }
 
 impl ElfWriteDomain {
-    pub fn new(is_debug: bool) -> Self {
+    pub fn new(apply_debug_relocations: bool) -> Self {
         Self {
             string_map: HashMap::new(),
             symbol_declarations: Vec::new(),
             relocations: Vec::new(),
-            is_debug,
+            apply_debug_relocations,
             prev_string_len: 0,
         }
     }
@@ -295,7 +295,7 @@ impl WriteDomain for ElfWriteDomain {
             target_location: heap_offset,
         });
         
-        if self.is_debug {
+        if self.apply_debug_relocations {
             self.write_pointer_debug(writer, Pointer(heap_offset as u32))?;
         }
         Ok(())
