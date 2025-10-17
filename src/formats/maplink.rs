@@ -4,7 +4,7 @@ use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
-    scoped_reader_pos, CanRead, CanWrite, CanWriteWithArgs, ReadDomainExt, Readable, Reader, Writable, WriteCtx, WriteDomainExt, Writer
+    CanRead, CanReadVec, CanWrite, CanWriteWithArgs, ReadVecFallbackExt, Readable, Reader, Writable, WriteCtx, WriteDomainExt, Writer
 };
 
 use crate::{
@@ -60,18 +60,10 @@ pub struct MaplinkArea {
     pub links: Vec<Link>,
 }
 
-impl<D: CanRead<String> + CanRead<Pointer>> Readable<D> for MaplinkArea {
+impl<D: CanRead<String> + CanRead<Pointer> + CanReadVec> Readable<D> for MaplinkArea {
     fn from_reader<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
         let map_name: String = domain.read(reader)?;
-        let links_ptr: Pointer = domain.read(reader)?;
-        let link_count: u32 = domain.read_fallback(reader)?;
-        
-        scoped_reader_pos!(reader);
-        reader.seek(SeekFrom::Start(links_ptr.into()))?;
-        
-        let links: Vec<Link> = (0..link_count)
-            .map(|_| Link::from_reader(reader, domain))
-            .collect::<Result<_>>()?;
+        let links: Vec<Link> = domain.read_std_vec_fallback(reader)?;
         
         Ok(Self { map_name, links })
     }

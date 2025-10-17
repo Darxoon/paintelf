@@ -1,16 +1,12 @@
 use std::{
-    any::TypeId,
-    collections::HashMap,
-    fmt::Display,
-    mem::{self, ManuallyDrop, transmute},
-    ptr,
+    any::TypeId, collections::HashMap, fmt::Display, io::SeekFrom, mem::{self, transmute, ManuallyDrop}, ptr
 };
 
-use anyhow::{Result, anyhow, ensure};
+use anyhow::{anyhow, ensure, Ok, Result};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use vivibin::{
-    CanRead, CanWrite, CanWriteWithArgs, EndianSpecific, Endianness, HeapToken, ReadDomain, Reader, WriteCtx, WriteDomain, Writer
+    CanRead, CanReadVec, CanWrite, CanWriteWithArgs, EndianSpecific, Endianness, HeapToken, ReadDomain, ReadDomainExt, Reader, WriteCtx, WriteDomain, Writer
 };
 
 use crate::{
@@ -54,6 +50,20 @@ impl<'a> ElfReadDomain<'a> {
         let pointer = self.read_pointer(reader)?;
         let result = read_string(self.rodata_section, pointer.0)?;
         Ok(result.to_string())
+    }
+    
+    pub fn read_vec<T: 'static, R: Reader>(self, reader: &mut R, read_content: impl Fn(&mut R) -> Result<T>) -> Result<Vec<T>> {
+        let ptr: Pointer = self.read_pointer(reader)?;
+        let count: u32 = self.read_fallback(reader)?;
+        
+        scoped_reader_pos!(reader);
+        reader.seek(SeekFrom::Start(ptr.into()))?;
+        
+        let values: Vec<T> = (0..count)
+            .map(|_| read_content(reader))
+            .collect::<Result<_>>()?;
+        
+        Ok(values)
     }
     
     pub fn read_pointer(&self, reader: &mut impl Reader) -> Result<Pointer> {
@@ -108,6 +118,12 @@ impl ReadDomain for ElfReadDomain<'_> {
 
     fn read_box<T, R: vivibin::Reader>(self, _reader: &mut R, _parser: impl FnOnce(&mut R, Self) -> Result<T>) -> Result<Option<T>> {
         Ok(None)
+    }
+}
+
+impl CanReadVec for ElfReadDomain<'_> {
+    fn read_std_vec_of<T: 'static, R: Reader>(self, reader: &mut R, read_content: impl Fn(&mut R) -> Result<T>) -> Result<Vec<T>> {
+        self.read_vec(reader, read_content)
     }
 }
 
