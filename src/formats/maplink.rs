@@ -4,11 +4,15 @@ use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
-    CanRead, CanReadVec, CanWriteSliceWithArgs, CanWriteWithArgs, ReadVecFallbackExt, Readable, Reader, Writable, WriteCtx, WriteDomainExt, WriteSliceWithArgsFallbackExt, Writer
+    CanRead, CanReadVec, CanWriteSliceWithArgs, CanWriteWithArgs, ReadVecFallbackExt, Readable,
+    Reader, Writable, WriteCtx, WriteDomainExt, WriteSliceWithArgsFallbackExt, Writer,
 };
 
 use crate::{
-    formats::FileData, util::pointer::Pointer, ElfReadDomain, ElfWriteDomain, SymbolDeclaration, SymbolName, WriteStringArgs
+    SymbolDeclaration, SymbolName,
+    binutil::{ElfReadDomain, ElfWriteDomain, WriteStringArgs},
+    formats::FileData,
+    util::pointer::Pointer,
 };
 
 pub fn read_maplink(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<FileData> {

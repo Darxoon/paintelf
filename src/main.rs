@@ -12,7 +12,8 @@ use binrw::BinWrite;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use paintelf::{
-    ElfReadDomain, ElfWriteDomain, RelDeclaration, SymbolDeclaration, SymbolName,
+    RelDeclaration, SymbolDeclaration, SymbolName,
+    binutil::{ElfReadDomain, ElfWriteDomain},
     elf::{Relocation, Section, Symbol, SymbolHeader, SymbolNameGenerator},
     elf_container::{ELF_HEADER_IDENT, ElfContainer, ElfHeader},
     formats::{
