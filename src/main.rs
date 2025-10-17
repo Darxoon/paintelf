@@ -1,5 +1,4 @@
 use std::{
-    cell::{Cell, RefCell},
     cmp::Ordering,
     collections::HashMap,
     env, fs,
@@ -62,22 +61,14 @@ fn reassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
     
     let mut block_offsets = Vec::new();
     
-    let (result_buffer, mut symbol_declarations, mut relocations) = match data {
+    let mut domain = ElfWriteDomain::new(is_debug);
+    
+    let result_buffer = match data {
         FileData::Maplink(maplink_areas) => {
-            let string_map = RefCell::new(HashMap::new());
-            let symbol_declarations = RefCell::new(Vec::new());
-            let relocations = RefCell::new(Vec::new());
-            let prev_string_len = Cell::new(0);
-            let domain = ElfWriteDomain::new(&string_map, &symbol_declarations, &relocations, &prev_string_len, is_debug);
-            
             let mut ctx: WriteCtxImpl<ElfWriteDomain> = ElfWriteDomain::new_ctx();
-            write_maplink(&mut ctx, domain, &maplink_areas)?;
+            write_maplink(&mut ctx, &mut domain, &maplink_areas)?;
             
-            (
-                ctx.to_buffer(domain, Some(&mut block_offsets))?,
-                symbol_declarations.into_inner(),
-                relocations.into_inner(),
-            )
+            ctx.to_buffer(&mut domain, Some(&mut block_offsets))?
         },
     };
     
@@ -88,8 +79,8 @@ fn reassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
     let mut out_path = input_file_path.with_file_name(base_name);
     
     let mut symbol_indices = HashMap::new();
-    let (symtab, strtab) = write_symtab(&block_offsets, &mut symbol_indices, &mut symbol_declarations)?;
-    let rela_rodata = write_relocations(&symbol_indices, &mut relocations)?;
+    let (symtab, strtab) = write_symtab(&block_offsets, &mut symbol_indices, &mut domain.symbol_declarations)?;
+    let rela_rodata = write_relocations(&symbol_indices, &mut domain.relocations)?;
     
     if is_debug {
         // write individual sections

@@ -1,6 +1,5 @@
 use std::{
     any::TypeId,
-    cell::{Cell, RefCell},
     collections::HashMap,
     fmt::Display,
     mem::{self, ManuallyDrop, transmute},
@@ -75,7 +74,7 @@ impl<'a> ElfReadDomain<'a> {
 }
 
 impl EndianSpecific for ElfReadDomain<'_> {
-    fn endianness(self) -> Endianness {
+    fn endianness(&self) -> Endianness {
         Endianness::Big
     }
 }
@@ -103,11 +102,7 @@ impl ReadDomain for ElfReadDomain<'_> {
     }
 
     // at some point vivibin will properly support these :P
-    fn read_unk_std_vec<T, R: vivibin::Reader>(self, _reader: &mut R, _read_content: impl Fn(&mut R) -> Result<T>) -> Result<Option<Vec<T>>> {
-        Ok(None)
-    }
-
-    fn read_unk_std_box<T, R: vivibin::Reader>(self, _reader: &mut R, _read_content: impl Fn(&mut R) -> Result<T>) -> Result<Option<Box<T>>> {
+    fn read_std_box_of<T, R: vivibin::Reader>(self, _reader: &mut R, _read_content: impl Fn(&mut R) -> Result<T>) -> Result<Option<Box<T>>> {
         Ok(None)
     }
 
@@ -194,43 +189,37 @@ impl Default for WriteStringArgs {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct ElfWriteDomain<'a> {
-    string_map: &'a RefCell<HashMap<String, HeapToken>>,
-    symbol_declarations: &'a RefCell<Vec<SymbolDeclaration>>,
-    relocations: &'a RefCell<Vec<RelDeclaration>>,
-    prev_string_len: &'a Cell<usize>,
-    is_debug: bool,
+#[derive(Clone)]
+pub struct ElfWriteDomain {
+    pub string_map: HashMap<String, HeapToken>,
+    pub symbol_declarations: Vec<SymbolDeclaration>,
+    pub relocations: Vec<RelDeclaration>,
+    pub is_debug: bool,
+    prev_string_len: usize,
 }
 
-impl EndianSpecific for ElfWriteDomain<'_> {
-    fn endianness(self) -> Endianness {
+impl EndianSpecific for ElfWriteDomain {
+    fn endianness(&self) -> Endianness {
         Endianness::Big
     }
 }
 
-impl<'a> ElfWriteDomain<'a> {
-    pub fn new(
-        string_map: &'a RefCell<HashMap<String, HeapToken>>,
-        symbol_declarations: &'a RefCell<Vec<SymbolDeclaration>>,
-        relocations: &'a RefCell<Vec<RelDeclaration>>,
-        prev_string_len: &'a Cell<usize>,
-        is_debug: bool,
-    ) -> Self {
+impl ElfWriteDomain {
+    pub fn new(is_debug: bool) -> Self {
         Self {
-            string_map,
-            symbol_declarations,
-            relocations,
-            prev_string_len,
+            string_map: HashMap::new(),
+            symbol_declarations: Vec::new(),
+            relocations: Vec::new(),
             is_debug,
+            prev_string_len: 0,
         }
     }
     
-    pub fn write_string(self, ctx: &mut impl WriteCtx, value: &str, args: WriteStringArgs) -> Result<()> {
+    pub fn write_string(&mut self, ctx: &mut impl WriteCtx, value: &str, args: WriteStringArgs) -> Result<()> {
         // Search for if this string has already been written before
         // TODO: account for substrings (use crate memchr?)
         let existing_token = if args.deduplicate && ctx.position()? < 0xc32c { 
-            self.string_map.borrow().get(value).copied()
+            self.string_map.get(value).copied()
         } else {
             None
         };
@@ -238,7 +227,7 @@ impl<'a> ElfWriteDomain<'a> {
         let token = if let Some(token) = existing_token {
             token
         } else {
-            let alignment = if self.prev_string_len.get() <= 2 && value.len() <= 1 {
+            let alignment = if self.prev_string_len <= 2 && value.len() <= 1 {
                 0
             } else {
                 4
@@ -246,7 +235,7 @@ impl<'a> ElfWriteDomain<'a> {
             
             // TODO: this is a hack
             if args.deduplicate {
-                self.prev_string_len.set(value.len());
+                self.prev_string_len = value.len();
             }
             
             let mut name_size: usize = 0;
@@ -267,9 +256,7 @@ impl<'a> ElfWriteDomain<'a> {
             });
             
             if args.deduplicate {
-                self.string_map
-                    .borrow_mut()
-                    .insert(value.to_string(), new_token);
+                self.string_map.insert(value.to_string(), new_token);
             }
             
             new_token
@@ -279,25 +266,25 @@ impl<'a> ElfWriteDomain<'a> {
         Ok(())
     }
     
-    pub fn put_symbol(self, symbol: SymbolDeclaration) {
-        self.symbol_declarations.borrow_mut().push(symbol);
+    pub fn put_symbol(&mut self, symbol: SymbolDeclaration) {
+        self.symbol_declarations.push(symbol);
     }
     
-    pub fn put_relocation(self, relocation: RelDeclaration) {
-        self.relocations.borrow_mut().push(relocation);
+    pub fn put_relocation(&mut self, relocation: RelDeclaration) {
+        self.relocations.push(relocation);
     }
     
-    pub fn write_pointer_debug(self, writer: &mut impl Writer, value: Pointer) -> Result<()> {
+    pub fn write_pointer_debug(&mut self, writer: &mut impl Writer, value: Pointer) -> Result<()> {
         writer.write_u32::<BigEndian>(value.0 | 0x70000000)?;
         Ok(())
     }
 }
 
-impl WriteDomain for ElfWriteDomain<'_> {
+impl WriteDomain for ElfWriteDomain {
     type Pointer = Pointer;
     type Cat = ();
 
-    fn write_unk<T: 'static>(self, ctx: &mut impl WriteCtx, value: &T) -> Result<Option<()>> {
+    fn write_unk<T: 'static>(&mut self, ctx: &mut impl WriteCtx, value: &T) -> Result<Option<()>> {
         let type_id = TypeId::of::<T>();
         
         if type_id == TypeId::of::<String>() {
@@ -309,7 +296,7 @@ impl WriteDomain for ElfWriteDomain<'_> {
         }
     }
 
-    fn apply_reference(self, writer: &mut impl Writer, heap_offset: usize) -> Result<()> {
+    fn apply_reference(&mut self, writer: &mut impl Writer, heap_offset: usize) -> Result<()> {
         self.put_relocation(RelDeclaration {
             base_location: writer.position()? as usize,
             target_location: heap_offset,
@@ -322,21 +309,21 @@ impl WriteDomain for ElfWriteDomain<'_> {
     }
 }
 
-impl CanWrite<String> for ElfWriteDomain<'_> {
-    fn write(self, ctx: &mut impl WriteCtx, value: &String) -> Result<()> {
+impl CanWrite<String> for ElfWriteDomain {
+    fn write(&mut self, ctx: &mut impl WriteCtx, value: &String) -> Result<()> {
         self.write_string(ctx, value, WriteStringArgs::default())
     }
 }
 
-impl CanWriteWithArgs<String, WriteStringArgs> for ElfWriteDomain<'_> {
-    fn write_args(self, ctx: &mut impl WriteCtx, value: &String, args: WriteStringArgs) -> Result<()> {
+impl CanWriteWithArgs<String, WriteStringArgs> for ElfWriteDomain {
+    fn write_args(&mut self, ctx: &mut impl WriteCtx, value: &String, args: WriteStringArgs) -> Result<()> {
         self.write_string(ctx, value, args)
     }
 }
 
 // TODO: this sucks
-impl CanWrite<SymbolDeclaration> for ElfWriteDomain<'_> {
-    fn write(self, _: &mut impl WriteCtx, value: &SymbolDeclaration) -> Result<()> {
+impl CanWrite<SymbolDeclaration> for ElfWriteDomain {
+    fn write(&mut self, _: &mut impl WriteCtx, value: &SymbolDeclaration) -> Result<()> {
         self.put_symbol(value.clone());
         Ok(())
     }

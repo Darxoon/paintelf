@@ -26,7 +26,7 @@ pub fn read_maplink<'a>(reader: &mut impl Reader, domain: ElfReadDomain) -> Resu
     Ok(FileData::Maplink(areas))
 }
 
-pub fn write_maplink(ctx: &mut impl WriteCtx, domain: ElfWriteDomain, areas: &[MaplinkArea]) -> Result<()> {
+pub fn write_maplink(ctx: &mut impl WriteCtx, domain: &mut ElfWriteDomain, areas: &[MaplinkArea]) -> Result<()> {
     let token =  ctx.heap_token_at_current_pos()?;
     domain.write_fallback::<u32>(ctx, &(areas.len() as u32))?;
     
@@ -78,7 +78,7 @@ impl<D: CanRead<String> + CanRead<Pointer>> Readable<D> for MaplinkArea {
 }
 
 impl<D: CanWriteWithArgs<String, WriteStringArgs> + CanWrite<SymbolDeclaration>> Writable<D> for MaplinkArea {
-    fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: D) -> Result<()> {
+    fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
         // TODO: turning off deduplication is a hack, figure out serialization order better
         domain.write_args(ctx, &self.map_name, WriteStringArgs { deduplicate: false })?;
         
@@ -124,8 +124,7 @@ pub struct Link {
 }
 
 impl<D: CanWrite<String>> Writable<D> for Link {
-    fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: D) -> Result<()> {
-        // TODO: actual string writing implementation
+    fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
         domain.write(ctx, &self.id)?;
         domain.write(ctx, &self.destination)?;
         domain.write(ctx, &self.link_type)?;
