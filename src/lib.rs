@@ -6,7 +6,7 @@ use anyhow::{anyhow, ensure, Ok, Result};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use vivibin::{
-    CanRead, CanReadVec, CanWrite, CanWriteWithArgs, EndianSpecific, Endianness, HeapToken, ReadDomain, ReadDomainExt, Reader, WriteCtx, WriteDomain, Writer
+    CanRead, CanReadVec, CanWrite, CanWriteSlice, CanWriteSliceWithArgs, CanWriteWithArgs, EndianSpecific, Endianness, HeapToken, ReadDomain, ReadDomainExt, Reader, WriteCtx, WriteDomain, WriteDomainExt, Writer
 };
 
 use crate::{
@@ -277,6 +277,33 @@ impl ElfWriteDomain {
         Ok(())
     }
     
+    pub fn write_slice<T: 'static, W: WriteCtx>(
+        &mut self, ctx: &mut W, values: &[T], args: Option<SymbolName>,
+        write_content: impl Fn(&mut Self, &mut W, &T) -> Result<()>,
+    ) -> Result<()> {
+        let mut links_size: usize = 0;
+        let token = ctx.allocate_next_block_aligned(4, |ctx| {
+            let start_pos = ctx.position()? as usize;
+            for value in values {
+                write_content(self, ctx, value)?;
+            }
+            links_size = ctx.position()? as usize - start_pos;
+            Ok(())
+        })?;
+        
+        ctx.write_token::<4>(token)?;
+        self.write_fallback(ctx, &(values.len() as u32))?;
+        
+        if let Some(name) = args {
+            self.put_symbol(SymbolDeclaration {
+                name,
+                offset: token,
+                size: links_size as u32,
+            });
+        }
+        Ok(())
+    }
+    
     pub fn put_symbol(&mut self, symbol: SymbolDeclaration) {
         self.symbol_declarations.push(symbol);
     }
@@ -320,6 +347,29 @@ impl WriteDomain for ElfWriteDomain {
     }
 }
 
+impl CanWriteSlice for ElfWriteDomain {
+    fn write_slice_of<T: 'static, W: WriteCtx>(
+        &mut self,
+        ctx: &mut W,
+        values: &[T],
+        write_content: impl Fn(&mut Self, &mut W, &T) -> Result<()>,
+    ) -> Result<()> {
+        self.write_slice(ctx, values, None, write_content)
+    }
+}
+
+impl CanWriteSliceWithArgs<Option<SymbolName>> for ElfWriteDomain {
+    fn write_slice_args_of<T: 'static, W: WriteCtx>(
+        &mut self,
+        ctx: &mut W,
+        values: &[T],
+        args: Option<SymbolName>,
+        write_content: impl Fn(&mut Self, &mut W, &T) -> Result<()>,
+    ) -> Result<()> {
+        self.write_slice(ctx, values, args, write_content)
+    }
+}
+
 impl CanWrite<String> for ElfWriteDomain {
     fn write(&mut self, ctx: &mut impl WriteCtx, value: &String) -> Result<()> {
         self.write_string(ctx, value, WriteStringArgs::default())
@@ -329,13 +379,5 @@ impl CanWrite<String> for ElfWriteDomain {
 impl CanWriteWithArgs<String, WriteStringArgs> for ElfWriteDomain {
     fn write_args(&mut self, ctx: &mut impl WriteCtx, value: &String, args: WriteStringArgs) -> Result<()> {
         self.write_string(ctx, value, args)
-    }
-}
-
-// TODO: this sucks
-impl CanWrite<SymbolDeclaration> for ElfWriteDomain {
-    fn write(&mut self, _: &mut impl WriteCtx, value: &SymbolDeclaration) -> Result<()> {
-        self.put_symbol(value.clone());
-        Ok(())
     }
 }

@@ -4,7 +4,7 @@ use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
-    CanRead, CanReadVec, CanWrite, CanWriteWithArgs, ReadVecFallbackExt, Readable, Reader, Writable, WriteCtx, WriteDomainExt, Writer
+    CanRead, CanReadVec, CanWriteSliceWithArgs, CanWriteWithArgs, ReadVecFallbackExt, Readable, Reader, Writable, WriteCtx, WriteDomainExt, WriteSliceWithArgsFallbackExt, Writer
 };
 
 use crate::{
@@ -69,28 +69,14 @@ impl<D: CanRead<String> + CanRead<Pointer> + CanReadVec> Readable<D> for Maplink
     }
 }
 
-impl<D: CanWriteWithArgs<String, WriteStringArgs> + CanWrite<SymbolDeclaration>> Writable<D> for MaplinkArea {
+impl<D> Writable<D> for MaplinkArea
+where
+    D: CanWriteWithArgs<String, WriteStringArgs> + CanWriteSliceWithArgs<Option<SymbolName>>,
+{
     fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
         // TODO: turning off deduplication is a hack, figure out serialization order better
         domain.write_args(ctx, &self.map_name, WriteStringArgs { deduplicate: false })?;
-        
-        let mut links_size: usize = 0;
-        let token = ctx.allocate_next_block_aligned(4, |ctx| {
-            let start_pos = ctx.position()? as usize;
-            for link in &self.links {
-                link.to_writer(ctx, domain)?;
-            }
-            links_size = ctx.position()? as usize - start_pos;
-            Ok(())
-        })?;
-        ctx.write_token::<4>(token)?;
-        domain.write(ctx, &SymbolDeclaration {
-            name: SymbolName::InternalNamed(self.map_name.clone()),
-            offset: token,
-            size: links_size as u32,
-        })?;
-        
-        domain.write_fallback::<u32>(ctx, &(self.links.len() as u32))?;
+        domain.write_slice_args_fallback(ctx, &self.links, Some(SymbolName::InternalNamed(self.map_name.clone())))?;
         Ok(())
     }
 }
