@@ -5,14 +5,13 @@ use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
     CanRead, CanReadVec, CanWriteSliceWithArgs, CanWriteWithArgs, ReadVecFallbackExt, Readable,
-    Reader, Writable, WriteCtx, WriteDomainExt, WriteSliceWithArgsFallbackExt, Writer,
+    Reader, Writable, WriteCtx, WriteDomainExt, WriteSliceWithArgsFallbackExt,
 };
 
 use crate::{
-    SymbolDeclaration, SymbolName,
+    SymbolName,
     binutil::{ElfReadDomain, ElfWriteDomain, WriteStringArgs},
     formats::FileData,
-    util::pointer::Pointer,
 };
 
 pub fn read_maplink(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<FileData> {
@@ -31,29 +30,16 @@ pub fn read_maplink(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<F
 }
 
 pub fn write_maplink(ctx: &mut impl WriteCtx, domain: &mut ElfWriteDomain, areas: &[MaplinkArea]) -> Result<()> {
-    let token =  ctx.heap_token_at_current_pos()?;
-    domain.write_fallback::<u32>(ctx, &(areas.len() as u32))?;
+    domain.write_symbol(ctx, "dataCount__Q3_4data3fld7maplink", |domain, ctx| {
+        domain.write_fallback::<u32>(ctx, &(areas.len() as u32))
+    })?;
     
-    domain.put_symbol(SymbolDeclaration {
-        name: SymbolName::Unmangled("dataCount__Q3_4data3fld7maplink".to_string()),
-        offset: token,
-        size: 4,
-    });
-    
-    let token = ctx.heap_token_at_current_pos()?;
-    let areas_start = ctx.position()?;
-    
-    for area in areas {
-        area.to_writer(ctx, domain)?;
-    }
-    
-    let areas_size = ctx.position()? - areas_start;
-    
-    domain.put_symbol(SymbolDeclaration {
-        name: SymbolName::Unmangled("datas__Q3_4data3fld7maplink".to_string()),
-        offset: token,
-        size: areas_size as u32,
-    });
+    domain.write_symbol(ctx, "datas__Q3_4data3fld7maplink", |domain, ctx| {
+        for area in areas {
+            area.to_writer(ctx, domain)?;
+        }
+        Ok(())
+    })?;
     
     Ok(())
 }
@@ -64,7 +50,7 @@ pub struct MaplinkArea {
     pub links: Vec<Link>,
 }
 
-impl<D: CanRead<String> + CanRead<Pointer> + CanReadVec> Readable<D> for MaplinkArea {
+impl<D: CanRead<String> + CanReadVec> Readable<D> for MaplinkArea {
     fn from_reader<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
         let map_name: String = domain.read(reader)?;
         let links: Vec<Link> = domain.read_std_vec_fallback(reader)?;
@@ -75,7 +61,7 @@ impl<D: CanRead<String> + CanRead<Pointer> + CanReadVec> Readable<D> for Maplink
 
 impl<D> Writable<D> for MaplinkArea
 where
-    D: CanWriteWithArgs<String, WriteStringArgs> + CanWriteSliceWithArgs<Option<SymbolName>>,
+    D: CanWriteWithArgs<String, WriteStringArgs> + CanWriteSliceWithArgs<Link, Option<SymbolName>>,
 {
     fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
         // TODO: turning off deduplication is a hack, figure out serialization order better

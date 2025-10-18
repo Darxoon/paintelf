@@ -42,6 +42,10 @@ pub fn test_reserialize_from_content(input_file_path: &Path, output_file: bool, 
             println!("[debug] Wrote re-serialized section '{}' with potential relocations applied", section.name);
         }
         
+        Ok(())
+    };
+    
+    let test_section_matching: _ = |section: &Section| -> Result<()> {
         let Some(original_section) = original.get_section(&section.name) else {
             bail!("Elf file contains section '{}', which did not exist originally", section.name);
         };
@@ -53,7 +57,6 @@ pub fn test_reserialize_from_content(input_file_path: &Path, output_file: bool, 
         if !output_file {
             println!("Section '{}' matches", section.name)
         }
-        
         Ok(())
     };
     
@@ -66,6 +69,17 @@ pub fn test_reserialize_from_content(input_file_path: &Path, output_file: bool, 
     }
     for section in debug_elf.meta_sections.values() {
         write_section_debug(section)?;
+    }
+    
+    for section in debug_elf.content_sections.values() {
+        if section.name.is_empty() {
+            continue;
+        }
+        
+        test_section_matching(section)?;
+    }
+    for section in debug_elf.meta_sections.values() {
+        test_section_matching(section)?;
     }
     
     // test the entire elf file for matching

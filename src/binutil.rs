@@ -6,7 +6,7 @@ use std::{
     ptr,
 };
 
-use anyhow::{Result, anyhow, ensure};
+use anyhow::{anyhow, bail, ensure, Result};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use vivibin::{
@@ -50,10 +50,22 @@ impl<'a> ElfReadDomain<'a> {
         Ok(result.clone())
     }
     
+    // TODO: find a way to do this with less repetition
     pub fn read_string(&self, reader: &mut impl Reader) -> Result<String> {
         let pointer = self.read_pointer(reader)?;
         let result = read_string(self.rodata_section, pointer.0)?;
         Ok(result.to_string())
+    }
+    
+    pub fn read_string_optional(&self, reader: &mut impl Reader) -> Result<Option<String>> {
+        let pointer = self.read_pointer_optional(reader)?;
+        
+        if let Some(pointer) = pointer {
+            let result = read_string(self.rodata_section, pointer.0)?;
+            Ok(Some(result.to_string()))
+        } else {
+            Ok(None)
+        }
     }
     
     pub fn read_vec<T: 'static, R: Reader>(self, reader: &mut R, read_content: impl Fn(&mut R) -> Result<T>) -> Result<Vec<T>> {
@@ -72,18 +84,30 @@ impl<'a> ElfReadDomain<'a> {
     
     pub fn read_pointer(&self, reader: &mut impl Reader) -> Result<Pointer> {
         let offset = Pointer::current(reader)?;
+        let optional_pointer = self.read_pointer_optional(reader)?;
+        
+        let Some(pointer) = optional_pointer else {
+            bail!("Expected pointer, got nothing (at offset 0x{:x}", offset.0);
+        };
+        
+        Ok(pointer)
+    }
+    
+    pub fn read_pointer_optional(&self, reader: &mut impl Reader) -> Result<Option<Pointer>> {
+        let offset = Pointer::current(reader)?;
         
         let real_value = reader.read_u32::<BigEndian>()?;
         ensure!(real_value == 0, "Expected pointer, got 0x{real_value:x} (at offset 0x{:x})", offset.0);
         
-        let relocation = self.relocations.get(&offset)
-            .ok_or_else(|| anyhow!("Expected pointer, got nothing (at offset 0x{:x}", offset.0))?;
-        
-        let symbol = self.symbols.get_index((relocation.info >> 8) as usize)
-            .ok_or_else(|| anyhow!("Could not find symbol at index {}", relocation.info >> 8))?
-            .1;
-        
-        Ok(symbol.offset().into())
+        if let Some(relocation) = self.relocations.get(&offset) {
+            let symbol = self.symbols.get_index((relocation.info >> 8) as usize)
+                .ok_or_else(|| anyhow!("Could not find symbol at index {}", relocation.info >> 8))?
+                .1;
+            
+            Ok(Some(symbol.offset().into()))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -104,10 +128,18 @@ impl ReadDomain for ElfReadDomain<'_> {
             let value = ManuallyDrop::new(self.read_pointer(reader)?);
             
             Some(unsafe { ptr::read(mem::transmute::<&Pointer, &T>(&value)) })
+        } else if type_id == TypeId::of::<Option<Pointer>>() {
+            let value = ManuallyDrop::new(self.read_pointer_optional(reader)?);
+            
+            Some(unsafe { ptr::read(mem::transmute::<&Option<Pointer>, &T>(&value)) })
         } else if type_id == TypeId::of::<String>() {
             let value = ManuallyDrop::new(self.read_string(reader)?);
             
             Some(unsafe { ptr::read(mem::transmute::<&String, &T>(&value)) })
+        } else if type_id == TypeId::of::<Option<String>>() {
+            let value = ManuallyDrop::new(self.read_string_optional(reader)?);
+            
+            Some(unsafe { ptr::read(mem::transmute::<&Option<String>, &T>(&value)) })
         } else {
             None
         };
@@ -137,9 +169,21 @@ impl CanRead<Pointer> for ElfReadDomain<'_> {
     }
 }
 
+impl CanRead<Option<Pointer>> for ElfReadDomain<'_> {
+    fn read(self, reader: &mut impl Reader) -> Result<Option<Pointer>> {
+        self.read_pointer_optional(reader)
+    }
+}
+
 impl CanRead<String> for ElfReadDomain<'_> {
     fn read(self, reader: &mut impl Reader) -> Result<String> {
         self.read_string(reader)
+    }
+}
+
+impl CanRead<Option<String>> for ElfReadDomain<'_> {
+    fn read(self, reader: &mut impl Reader) -> Result<Option<String>> {
+        self.read_string_optional(reader)
     }
 }
 
@@ -153,6 +197,11 @@ impl Default for WriteStringArgs {
     fn default() -> Self {
         Self { deduplicate: true }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct WriteNullTermiantedSliceArgs {
+    pub symbol_name: Option<SymbolName>,
 }
 
 #[derive(Clone)]
@@ -179,6 +228,15 @@ impl ElfWriteDomain {
             apply_debug_relocations,
             prev_string_len: 0,
         }
+    }
+    
+    pub fn write_string_optional(&mut self, ctx: &mut impl WriteCtx, value: Option<&str>, args: WriteStringArgs) -> Result<()> {
+        let Some(value) = value else {
+            self.write_fallback::<u32>(ctx, &0)?;
+            return Ok(());
+        };
+        
+        self.write_string(ctx, value, args)
     }
     
     pub fn write_string(&mut self, ctx: &mut impl WriteCtx, value: &str, args: WriteStringArgs) -> Result<()> {
@@ -259,6 +317,54 @@ impl ElfWriteDomain {
         Ok(())
     }
     
+    pub fn write_null_terminated_slice<T: Default + 'static, W: WriteCtx>(
+        &mut self, ctx: &mut W, values: &[T], args: WriteNullTermiantedSliceArgs,
+        write_content: impl Fn(&mut Self, &mut W, &T) -> Result<()>,
+    ) -> Result<()> {
+        let mut links_size: usize = 0;
+        let token = ctx.allocate_next_block_aligned(4, |ctx| {
+            let start_pos = ctx.position()? as usize;
+            for value in values {
+                write_content(self, ctx, value)?;
+            }
+            write_content(self, ctx, &T::default())?;
+            links_size = ctx.position()? as usize - start_pos;
+            Ok(())
+        })?;
+        
+        ctx.write_token::<4>(token)?;
+        
+        if let Some(name) = args.symbol_name {
+            self.put_symbol(SymbolDeclaration {
+                name,
+                offset: token,
+                size: links_size as u32,
+            });
+        }
+        Ok(())
+    }
+    
+    pub fn write_symbol<W: WriteCtx>(
+        &mut self,
+        ctx: &mut W,
+        symbol_name: impl Into<String>,
+        content_callback: impl FnOnce(&mut Self, &mut W) -> Result<()>
+    ) -> Result<()> {
+        let token = ctx.heap_token_at_current_pos()?;
+        let start_offset = ctx.position()?;
+        
+        content_callback(self, ctx)?;
+        
+        let size = ctx.position()? - start_offset;
+        
+        self.put_symbol(SymbolDeclaration {
+            name: SymbolName::Unmangled(symbol_name.into()),
+            offset: token,
+            size: size as u32,
+        });
+        Ok(())
+    }
+    
     pub fn put_symbol(&mut self, symbol: SymbolDeclaration) {
         self.symbol_declarations.push(symbol);
     }
@@ -283,6 +389,10 @@ impl WriteDomain for ElfWriteDomain {
         if type_id == TypeId::of::<String>() {
             let value = unsafe { transmute::<&T, &String>(value) };
             self.write_string(ctx, value, WriteStringArgs::default())?;
+            Ok(Some(()))
+        } else if type_id == TypeId::of::<Option<String>>() {
+            let value = unsafe { transmute::<&T, &Option<String>>(value) };
+            self.write_string_optional(ctx, value.as_deref(), WriteStringArgs::default())?;
             Ok(Some(()))
         } else {
             Ok(None)
@@ -313,8 +423,8 @@ impl CanWriteSlice for ElfWriteDomain {
     }
 }
 
-impl CanWriteSliceWithArgs<Option<SymbolName>> for ElfWriteDomain {
-    fn write_slice_args_of<T: 'static, W: WriteCtx>(
+impl<T: 'static> CanWriteSliceWithArgs<T, Option<SymbolName>> for ElfWriteDomain {
+    fn write_slice_args_of<W: WriteCtx>(
         &mut self,
         ctx: &mut W,
         values: &[T],
@@ -325,9 +435,27 @@ impl CanWriteSliceWithArgs<Option<SymbolName>> for ElfWriteDomain {
     }
 }
 
+impl<T: Default + 'static> CanWriteSliceWithArgs<T, WriteNullTermiantedSliceArgs> for ElfWriteDomain {
+    fn write_slice_args_of<W: WriteCtx>(
+        &mut self,
+        ctx: &mut W,
+        values: &[T],
+        args: WriteNullTermiantedSliceArgs,
+        write_content: impl Fn(&mut Self, &mut W, &T) -> Result<()>,
+    ) -> Result<()> {
+        self.write_null_terminated_slice(ctx, values, args, write_content)
+    }
+}
+
 impl CanWrite<String> for ElfWriteDomain {
     fn write(&mut self, ctx: &mut impl WriteCtx, value: &String) -> Result<()> {
         self.write_string(ctx, value, WriteStringArgs::default())
+    }
+}
+
+impl CanWrite<Option<String>> for ElfWriteDomain {
+    fn write(&mut self, ctx: &mut impl WriteCtx, value: &Option<String>) -> Result<()> {
+        self.write_string_optional(ctx, value.as_deref(), WriteStringArgs::default())
     }
 }
 

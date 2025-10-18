@@ -7,9 +7,12 @@ use std::{
 
 use anyhow::{Result, anyhow, bail};
 use paintelf::{
-    binutil::ElfReadDomain, elf::{container::ElfContainer, Section}, formats::{
-        maplink::read_maplink, FileData
-    }, link_section_debug, matching::{test_reserialize_directly, test_reserialize_from_content}, reassemble_elf_container
+    binutil::ElfReadDomain,
+    elf::{Section, container::ElfContainer},
+    formats::{FileData, FileType, maplink::read_maplink, shop::read_shops},
+    link_section_debug,
+    matching::{test_reserialize_directly, test_reserialize_from_content},
+    reassemble_elf_container,
 };
 
 fn main() -> Result<()> {
@@ -20,27 +23,66 @@ fn main() -> Result<()> {
         }));
     }
     
-    let argv = env::args().collect::<Vec<_>>();
+    let mut argv = env::args();
     
-    if argv.len() < 2 || argv[1] == "-h" || argv[1] == "--help" {
-        println!("Usage: paintelf <path to decompressed .elf>");
-        println!("(Supported elf files are: data_fld_maplink.elf)");
+    let mut help = false;
+    let mut is_debug = false;
+    let mut file_type = None;
+    let mut positional = Vec::new();
+    
+    while let Some(arg) = argv.next() {
+        match arg.as_str() {
+            "-h" | "--help" => {
+                help = true;
+            },
+            "-d" | "--debug" => {
+                is_debug = true;
+            },
+            "-t" | "--type" => {
+                if file_type.is_some() {
+                    bail!("Cannot define --type argument twice");
+                }
+                
+                let name = argv.next()
+                    .ok_or_else(|| anyhow!("Expected one of these file types: {}", FileType::ALL_VALUES.join(", ")))?;
+                file_type = FileType::from_string(&name);
+                
+                if file_type.is_none() {
+                    bail!("Unknown file type {name}, expected one of these: {}", FileType::ALL_VALUES.join(", "));
+                }
+            },
+            _ => {
+                positional.push(arg);
+            },
+        }
+    }
+    
+    if positional.len() != 2 || help {
+        println!(
+            "Usage: paintelf [options] <path to decompressed .elf>\n\n\
+            Options:\n\
+            {}-h | --help: Shows this text.\n\
+            {}-t | --type <{}>: Type of the elf file\n\n\
+            (Supported elf files are: data_fld_maplink.elf, data_shop.elf)",
+            "    ",
+            "    ",
+            FileType::ALL_VALUES.join("|")
+        );
         return Ok(());
     }
     
-    let (is_debug, input_file_path_str) = if argv[1] == "-d" || argv[1] == "--debug" {
-        println!("Debug!");
-        (true, argv[2].as_str())
-    } else {
-        (false, argv[1].as_str())
-    };
-    
+    let input_file_path_str = positional[1].as_str();
     let input_file_path = PathBuf::from(input_file_path_str);
     
     if input_file_path_str.ends_with(".yaml") {
         reassemble_elf(&input_file_path)
     } else {
-        disassemble_elf(&input_file_path, is_debug)
+        let Some(file_type) = file_type else {
+            bail!("Expected one of these file types to be passed with '--type' argument: {}",
+                FileType::ALL_VALUES.join(", "));
+        };
+        
+        disassemble_elf(&input_file_path, file_type, is_debug)
     }
 }
 
@@ -62,7 +104,7 @@ fn reassemble_elf(input_file_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
+fn disassemble_elf(input_file_path: &Path, file_type: FileType, is_debug: bool) -> Result<()> {
     let elf_file_raw = fs::read(input_file_path)?;
     let mut reader: Cursor<&[u8]> = Cursor::new(&elf_file_raw);
     
@@ -78,7 +120,11 @@ fn disassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
     let domain = ElfReadDomain::new(&rodata_section.content, rodata_relocations, &elf_file.symbols);
     
     let mut reader: Cursor<&[u8]> = Cursor::new(&rodata_section.content);
-    let maplink = read_maplink(&mut reader, domain)?;
+    let maplink = match file_type {
+        FileType::Maplink => read_maplink(&mut reader, domain)?,
+        FileType::Shop => read_shops(&mut reader, domain)?,
+    };
+    
     let yaml = serde_yaml_bw::to_string(&maplink)?;
     
     let out_path = input_file_path.with_extension("yaml");

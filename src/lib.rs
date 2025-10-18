@@ -1,12 +1,25 @@
-use std::{cmp::Ordering, collections::HashMap, fmt::Display, io::{Cursor, Read, Write}};
+use std::{
+    cmp::Ordering,
+    collections::HashMap,
+    fmt::Display,
+    io::{Cursor, Read, Seek, SeekFrom, Write},
+};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use binrw::BinWrite;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use vivibin::{HeapToken, WriteCtxImpl, WriteDomainExt};
 
-use crate::{binutil::ElfWriteDomain, elf::{container::{ElfContainer, ElfHeader, ELF_HEADER_IDENT}, Relocation, Section, Symbol, SymbolHeader, SymbolNameGenerator}, formats::{maplink::write_maplink, FileData}, util::pointer::Pointer};
+use crate::{
+    binutil::ElfWriteDomain,
+    elf::{
+        Relocation, Section, Symbol, SymbolHeader, SymbolNameGenerator,
+        container::{ELF_HEADER_IDENT, ElfContainer, ElfHeader},
+    },
+    formats::{FileData, maplink::write_maplink, shop::write_shops},
+    util::pointer::Pointer,
+};
 
 pub mod binutil;
 pub mod elf;
@@ -72,24 +85,34 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
     let mut domain = ElfWriteDomain::new(apply_debug_relocations);
     
     // serialize data
-    let result_buffer = match data {
+    let mut ctx: WriteCtxImpl<ElfWriteDomain> = ElfWriteDomain::new_ctx();
+    match data {
         FileData::Maplink(maplink_areas) => {
-            let mut ctx: WriteCtxImpl<ElfWriteDomain> = ElfWriteDomain::new_ctx();
             write_maplink(&mut ctx, &mut domain, &maplink_areas)?;
-            
-            ctx.to_buffer(&mut domain, Some(&mut block_offsets))?
+        },
+        FileData::Shop(shop_list) => {
+            write_shops(&mut ctx, &mut domain, &shop_list)?;
         },
     };
+    let result_buffer = ctx.to_buffer(&mut domain, Some(&mut block_offsets))?;
     
     // serialize elf metadata
+    let initial_strtab = format!("\0{}\0", data.cpp_file_name()).into_bytes();
+    
     let mut symbol_indices = HashMap::new();
-    let (symtab, strtab) = write_symtab(&block_offsets, &mut symbol_indices, &mut domain.symbol_declarations)?;
+    let (symtab, last_local_symbol, strtab) = write_symtab(
+        initial_strtab,
+        &block_offsets,
+        &mut symbol_indices,
+        &mut domain.symbol_declarations
+    )?;
     let rela_rodata = write_relocations(&symbol_indices, &mut domain.relocations)?;
     
     // populate new ElfContainer
     // TODO: verify these values are correct in shifted files
     let header = ElfHeader {
         e_ident: ELF_HEADER_IDENT,
+        e_ident_padding_unk: data.elf_ident_padding_unk(),
         e_type: 1,
         e_machine: 0x14,
         e_version: 1,
@@ -110,7 +133,7 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
     
     const SH_STRING_TAB: &[u8] = b"\0.symtab\0.strtab\0.shstrtab\0.rela.rodata\0";
     result.add_string_table_raw(".shstrtab", 0, 1, SH_STRING_TAB.to_owned());
-    result.add_symbol_table_raw(".symtab", 0, 4, symtab);
+    result.add_symbol_table_raw(".symtab", 0, last_local_symbol, 4, symtab);
     result.add_string_table_raw(".strtab", 0, 1, strtab);
     
     Ok(result)
@@ -135,14 +158,13 @@ pub fn write_relocations(
 }
 
 pub fn write_symtab(
+    initial_content: Vec<u8>,
     block_offsets: &[usize],
     out_symbol_indices: &mut HashMap<usize, usize>,
     symbol_declarations: &mut Vec<SymbolDeclaration>,
-) -> Result<(Vec<u8>, Vec<u8>)> {
+) -> Result<(Vec<u8>, u32, Vec<u8>)> {
     // name unnamed internal symbols
     {
-        let mut symbol_name_gen = SymbolNameGenerator::new();
-        
         let mut symbols: Vec<(char, &mut SymbolDeclaration)> = symbol_declarations.iter_mut()
             .flat_map(|symbol| match symbol.name {
                     SymbolName::Internal(initial_char) => Some((initial_char, symbol)),
@@ -150,9 +172,20 @@ pub fn write_symtab(
             })
             .collect::<Vec<_>>();
         
-        symbols.sort_by_key(|(_, symbol)| symbol.offset);
+        symbols.sort_by(|(initial_char1, symbol1), (initial_char2, symbol2)| {
+            initial_char1.cmp(initial_char2).then(symbol1.offset.cmp(&symbol2.offset))
+        });
+        
+        let mut symbol_name_gen = SymbolNameGenerator::new();
+        let mut prev_initial_char = '\0';
         
         for (initial_char, symbol) in symbols {
+            // Make sure every initial_char has its own name gen
+            if prev_initial_char  != initial_char {
+                symbol_name_gen = SymbolNameGenerator::new();
+                prev_initial_char = initial_char;
+            }
+            
             let tail = symbol_name_gen.next();
             
             let mut name = String::with_capacity(tail.len() + 1);
@@ -257,10 +290,10 @@ pub fn write_symtab(
     
     symbol_declarations.sort_by_key(|symbol| symbol.offset.resolve(block_offsets));
     
-    let mut strtab = Cursor::new(Vec::new());
-    strtab.write_all(b"\0data_fld_maplink.cpp\0")?;
+    let mut strtab = Cursor::new(initial_content);
+    strtab.seek(SeekFrom::End(0))?;
     
-    let mut write_symbol: _ = |writer: &mut Cursor<Vec<u8>>, symbol: &SymbolDeclaration, st_info: u8| -> Result<()> {
+    let mut write_symbol: _ = |writer: &mut Cursor<Vec<u8>>, symbol_count: &mut usize, symbol: &SymbolDeclaration, st_info: u8| -> Result<()> {
         // serialize name
         let name_ptr = if let Some(symbol_name) = symbol.name.as_str() {
             let name_ptr = Pointer::current(&mut strtab)?;
@@ -272,8 +305,8 @@ pub fn write_symtab(
         };
         
         // serialize symbol
-        out_symbol_indices.insert(symbol.offset.resolve(block_offsets), symbol_count);
-        symbol_count += 1;
+        out_symbol_indices.insert(symbol.offset.resolve(block_offsets), *symbol_count);
+        *symbol_count += 1;
         BinWrite::write(&SymbolHeader {
             st_name: name_ptr,
             st_value: symbol.offset.resolve(block_offsets) as u32,
@@ -288,8 +321,11 @@ pub fn write_symtab(
     
     // serialize unnamed/automatically named/internally linked symbols
     for symbol in symbol_declarations.iter() {
-        write_symbol(&mut writer, symbol, 0x1)?;
+        // 0x1: STB_LOCAL | STT_OBJECT
+        write_symbol(&mut writer, &mut symbol_count, symbol, 0x1)?;
     }
+    
+    let last_local_symbol = symbol_count as u32;
     
     // weird unknown symbols (0x10 implies "external reference" (??))
     for _ in 0..12 {
@@ -306,10 +342,10 @@ pub fn write_symtab(
     // serialize named symbols
     for symbol in named_symbols {
         println!("named symbol {symbol:?}");
-        write_symbol(&mut writer, &symbol, 0x11)?;
+        write_symbol(&mut writer, &mut symbol_count, &symbol, 0x11)?;
     }
     
-    Ok((writer.into_inner(), strtab.into_inner()))
+    Ok((writer.into_inner(), last_local_symbol, strtab.into_inner()))
 }
 
 

@@ -15,13 +15,14 @@ use crate::{
     util::{pointer::Pointer, read_string},
 };
 
-pub const ELF_HEADER_IDENT: [u8; 16] = [0x7F, 0x45, 0x4C, 0x46, 0x01, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01];
+pub const ELF_HEADER_IDENT: [u8; 12] = [0x7F, 0x45, 0x4C, 0x46, 0x01, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00];
 
 #[derive(Debug, Clone, BinRead, BinWrite)]
 #[brw(big)]
 #[repr(C)]
 pub struct ElfHeader {
-    pub e_ident: [u8; 16],
+    pub e_ident: [u8; 12],
+    pub e_ident_padding_unk: u32,
     pub e_type: u16,
     pub e_machine: u16,
     pub e_version: u32,
@@ -157,8 +158,8 @@ impl ElfContainer {
         inner(self, name.into(), flags, align, content);
     }
     
-    pub fn add_symbol_table_raw(&mut self, name: impl Into<String>, flags: u32, align: u32, content: Vec<u8>) {
-        fn inner(container: &mut ElfContainer, name: String, flags: u32, align: u32, content: Vec<u8>) {
+    pub fn add_symbol_table_raw(&mut self, name: impl Into<String>, flags: u32, last_local_symbol: u32, align: u32, content: Vec<u8>) {
+        fn inner(container: &mut ElfContainer, name: String, flags: u32, last_local_symbol: u32, align: u32, content: Vec<u8>) {
             container.meta_sections.insert(name.clone(), Section {
                 header: SectionHeader {
                     // overridden at serialization of container
@@ -172,7 +173,7 @@ impl ElfContainer {
                     sh_size: 0,
                     // TODO: determine these fields automatically
                     sh_link: 5,
-                    sh_info: 0x2202,
+                    sh_info: last_local_symbol,
                     sh_addralign: align,
                     sh_entsize: 0x10,
                 },
@@ -181,7 +182,7 @@ impl ElfContainer {
                 content,
             });
         }
-        inner(self, name.into(), flags, align, content);
+        inner(self, name.into(), flags, last_local_symbol, align, content);
     }
     
     pub fn from_reader(reader: &mut impl Reader) -> Result<Self> {
