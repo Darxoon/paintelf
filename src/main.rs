@@ -9,7 +9,7 @@ use anyhow::{Result, anyhow, bail};
 use paintelf::{
     binutil::ElfReadDomain,
     elf::{Section, container::ElfContainer},
-    formats::{FileData, FileType, maplink::read_maplink, shop::read_shops},
+    formats::{FileData, FileType, mapid::read_mapid, maplink::read_maplink, shop::read_shops},
     link_section_debug,
     matching::{test_reserialize_directly, test_reserialize_from_content},
     reassemble_elf_container,
@@ -122,6 +122,7 @@ fn disassemble_elf(input_file_path: &Path, file_type: FileType, is_debug: bool) 
     let mut reader: Cursor<&[u8]> = Cursor::new(&rodata_section.content);
     let maplink = match file_type {
         FileType::Maplink => read_maplink(&mut reader, domain)?,
+        FileType::MapId => read_mapid(&mut reader, domain)?,
         FileType::Shop => read_shops(&mut reader, domain)?,
     };
     

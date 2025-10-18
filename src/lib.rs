@@ -17,7 +17,7 @@ use crate::{
         Relocation, Section, Symbol, SymbolHeader, SymbolNameGenerator,
         container::{ELF_HEADER_IDENT, ElfContainer, ElfHeader},
     },
-    formats::{FileData, maplink::write_maplink, shop::write_shops},
+    formats::{FileData, mapid::write_mapid, maplink::write_maplink, shop::write_shops},
     util::pointer::Pointer,
 };
 
@@ -92,6 +92,9 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
         },
         FileData::Shop(shop_list) => {
             write_shops(&mut ctx, &mut domain, &shop_list)?;
+        },
+        FileData::MapId(map_groups) => {
+            write_mapid(&mut ctx, &mut domain, &map_groups)?;
         },
     };
     let result_buffer = ctx.to_buffer(&mut domain, Some(&mut block_offsets))?;
