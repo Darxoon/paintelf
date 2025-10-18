@@ -96,6 +96,7 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
         FileData::MapId(map_groups) => {
             write_mapid(&mut ctx, &mut domain, &map_groups)?;
         },
+        FileData::Dispos(_) => todo!(),
     };
     let result_buffer = ctx.to_buffer(&mut domain, Some(&mut block_offsets))?;
     

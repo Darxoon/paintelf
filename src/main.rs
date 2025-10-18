@@ -9,7 +9,7 @@ use anyhow::{Result, anyhow, bail};
 use paintelf::{
     binutil::ElfReadDomain,
     elf::{Section, container::ElfContainer},
-    formats::{FileData, FileType, mapid::read_mapid, maplink::read_maplink, shop::read_shops},
+    formats::{dispos::read_dispos, mapid::read_mapid, maplink::read_maplink, shop::read_shops, FileData, FileType},
     link_section_debug,
     matching::{test_reserialize_directly, test_reserialize_from_content},
     reassemble_elf_container,
@@ -111,19 +111,25 @@ fn disassemble_elf(input_file_path: &Path, file_type: FileType, is_debug: bool) 
     let elf_file = ElfContainer::from_reader(&mut reader)?;
     
     // get necessary sections
-    let rodata_section = &elf_file.content_sections[".rodata"];
-    let Some(rodata_relocations) = &rodata_section.relocations else {
-        bail!("Could not find section .rela.rodata");
+    let content_section = &elf_file.content_sections[file_type.content_section_name()];
+    let Some(content_relocations) = &content_section.relocations else {
+        bail!("Could not find section .rela{}", file_type.content_section_name());
+    };
+    
+    let rodata_section = match file_type {
+        FileType::Dispos => &elf_file.content_sections[".rodata"],
+        _ => content_section,
     };
     
     // parse maplink file
-    let domain = ElfReadDomain::new(&rodata_section.content, rodata_relocations, &elf_file.symbols);
+    let domain = ElfReadDomain::new(&rodata_section.content, content_relocations, &elf_file.symbols);
     
-    let mut reader: Cursor<&[u8]> = Cursor::new(&rodata_section.content);
+    let mut reader: Cursor<&[u8]> = Cursor::new(&content_section.content);
     let maplink = match file_type {
         FileType::Maplink => read_maplink(&mut reader, domain)?,
         FileType::MapId => read_mapid(&mut reader, domain)?,
         FileType::Shop => read_shops(&mut reader, domain)?,
+        FileType::Dispos => read_dispos(&mut reader, domain)?,
     };
     
     let yaml = serde_yaml_bw::to_string(&maplink)?;

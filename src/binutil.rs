@@ -52,7 +52,13 @@ impl<'a> ElfReadDomain<'a> {
     
     // TODO: find a way to do this with less repetition
     pub fn read_string(&self, reader: &mut impl Reader) -> Result<String> {
-        let pointer = self.read_pointer(reader)?;
+        let offset = Pointer::current(reader)?;
+        let pointer = self.read_pointer_optional(reader)?;
+        let Some(pointer) = pointer else {
+            // TODO: improve debug info
+            bail!("Expected non-nullable string, got null (at offset 0x{:x})", offset.0);
+        };
+        
         let result = read_string(self.rodata_section, pointer.0)?;
         Ok(result.to_string())
     }
@@ -69,8 +75,16 @@ impl<'a> ElfReadDomain<'a> {
     }
     
     pub fn read_vec<T: 'static, R: Reader>(self, reader: &mut R, read_content: impl Fn(&mut R) -> Result<T>) -> Result<Vec<T>> {
-        let ptr: Pointer = self.read_pointer(reader)?;
+        let ptr: Option<Pointer> = self.read_pointer_optional(reader)?;
         let count: u32 = self.read_fallback(reader)?;
+        
+        let Some(ptr) = ptr else {
+            return Ok(Vec::new());
+        };
+        
+        if count == 0 {
+            return Ok(Vec::new());
+        }
         
         scoped_reader_pos!(reader);
         reader.seek(SeekFrom::Start(ptr.into()))?;
@@ -87,7 +101,7 @@ impl<'a> ElfReadDomain<'a> {
         let optional_pointer = self.read_pointer_optional(reader)?;
         
         let Some(pointer) = optional_pointer else {
-            bail!("Expected pointer, got nothing (at offset 0x{:x}", offset.0);
+            bail!("Expected pointer, got nothing (at offset 0x{:x})", offset.0);
         };
         
         Ok(pointer)

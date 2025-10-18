@@ -2,8 +2,9 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-use crate::formats::{mapid::MapGroup, maplink::MaplinkArea, shop::Shop};
+use crate::formats::{dispos::DisposArea, mapid::MapGroup, maplink::MaplinkArea, shop::Shop};
 
+pub mod dispos;
 pub mod mapid;
 pub mod maplink;
 pub mod shop;
@@ -13,17 +14,26 @@ pub enum FileType {
     Maplink,
     MapId,
     Shop,
+    Dispos,
 }
 
 impl FileType {
-    pub const ALL_VALUES: [&str; 3] = ["maplink", "mapid", "shop"];
+    pub const ALL_VALUES: [&str; 4] = ["maplink", "mapid", "shop", "dispos"];
     
     pub fn from_string(string: &str) -> Option<FileType> {
         match string {
             "maplink" => Some(FileType::Maplink),
             "mapid" => Some(FileType::MapId),
             "shop" => Some(FileType::Shop),
+            "dispos" => Some(FileType::Dispos),
             _ => None,
+        }
+    }
+    
+    pub fn content_section_name(self) -> &'static str {
+        match self {
+            FileType::Dispos => ".data",
+            _ => ".rodata",
         }
     }
 }
@@ -34,6 +44,7 @@ impl Display for FileType {
             FileType::Maplink => "maplink",
             FileType::MapId => "mapid",
             FileType::Shop => "shop",
+            FileType::Dispos => "dispos",
         })
     }
 }
@@ -43,6 +54,7 @@ pub enum FileData {
     Maplink(Vec<MaplinkArea>),
     MapId(Vec<MapGroup>),
     Shop(Vec<Shop>),
+    Dispos(Vec<DisposArea>),
 }
 
 impl FileData {
@@ -51,6 +63,7 @@ impl FileData {
             FileData::Maplink(_) => "data_fld_maplink.cpp",
             FileData::MapId(_) => "data_fld_mapid.cpp",
             FileData::Shop(_) => "data_shop.cpp",
+            FileData::Dispos(_) => todo!(),
         }
     }
     
