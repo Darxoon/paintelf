@@ -1,4 +1,5 @@
-use std::{ffi::CStr, io::{Read, Seek, SeekFrom}};
+use core::ffi::CStr;
+use std::{io::{Read, Seek, SeekFrom}};
 
 use anyhow::Result;
 

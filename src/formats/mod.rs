@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use core::fmt::{self, Display};
 
 use serde::{Deserialize, Serialize};
 
@@ -39,7 +39,7 @@ impl FileType {
 }
 
 impl Display for FileType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             FileType::Maplink => "maplink",
             FileType::MapId => "mapid",

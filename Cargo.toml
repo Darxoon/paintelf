@@ -14,6 +14,10 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_yaml_bw = "2.4.1"
 vivibin = { path = "vivibin" }
 
+[lints.clippy]
+std_instead_of_core = "warn"
+std_instead_of_alloc = "warn"
+
 [profile.release]
 panic = "abort"
 strip = true

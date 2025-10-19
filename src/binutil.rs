@@ -1,9 +1,11 @@
-use std::{
+use core::{
     any::TypeId,
-    collections::HashMap,
-    io::SeekFrom,
     mem::{self, ManuallyDrop, transmute},
     ptr,
+};
+use std::{
+    collections::HashMap,
+    io::SeekFrom,
 };
 
 use anyhow::{anyhow, bail, ensure, Result};

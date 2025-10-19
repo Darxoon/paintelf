@@ -1,4 +1,5 @@
-use std::{fmt::Debug, io::{Read, Seek, SeekFrom}};
+use core::fmt::{self, Debug};
+use std::io::{Read, Seek, SeekFrom};
 
 use anyhow::Result;
 use binrw::{BinRead, BinWrite};
@@ -64,7 +65,7 @@ impl Section {
 }
 
 impl Debug for Section {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Section")
             .field("header", &self.header)
             .field("name", &self.name)

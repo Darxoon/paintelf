@@ -1,7 +1,7 @@
+use core::mem::{self, offset_of};
 use std::{
     collections::HashMap,
     io::{Cursor, SeekFrom, Write},
-    mem::{self, offset_of},
 };
 
 use anyhow::{Error, Result, anyhow, bail};

@@ -1,5 +1,6 @@
 // darxoon's small pointer utility v1, adapted for big endian
-use std::{fmt::Debug, io::{Cursor, Read, Seek, Write}, num::TryFromIntError, ops::{Add, Sub}, result};
+use core::{fmt::{self, Debug}, num::TryFromIntError, ops::{Add, Sub}, result};
+use std::{io::{Cursor, Read, Seek, Write}};
 
 use anyhow::Result;
 use binrw::{BinRead, BinWrite};
@@ -83,11 +84,7 @@ pub struct Pointer(pub u32);
 
 impl Pointer {
     pub fn new(x: u32) -> Option<Self> {
-        if x != 0 {
-            Some(Pointer(x))
-        } else {
-            None
-        }
+        (x != 0).then_some(Pointer(x))
     }
     
     pub fn current<S: Seek>(seek: &mut S) -> Result<Self> {
@@ -129,7 +126,7 @@ impl Pointer {
 }
 
 impl Debug for Pointer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!("Pointer({:#x})", self.0))
     }
 }

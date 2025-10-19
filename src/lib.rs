@@ -1,7 +1,10 @@
-use std::{
+use core::{
     cmp::Ordering,
+    fmt::{self, Display},
+};
+use std::{
+    
     collections::HashMap,
-    fmt::Display,
     io::{Cursor, Read, Seek, SeekFrom, Write},
 };
 
@@ -56,7 +59,7 @@ impl SymbolName {
 }
 
 impl Display for SymbolName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SymbolName::None => write!(f, "<none>"),
             SymbolName::Internal(initial_char) => write!(f, "{initial_char}<???>"),
