@@ -137,6 +137,8 @@ impl SymbolNameGenerator {
         Self::default()
     }
     
+    // since this is a lending iterator, which is not compatible with std::Iterator
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> &str {
         if self.indices.is_empty() {
             self.indices.push(0);

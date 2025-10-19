@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{Result, anyhow, bail};
+use indoc::printdoc;
 use paintelf::{
     binutil::ElfReadDomain,
     elf::{Section, container::ElfContainer},
@@ -58,14 +59,15 @@ fn main() -> Result<()> {
     }
     
     if positional.len() != 2 || help {
-        println!(
-            "Usage: paintelf [options] <path to decompressed .elf>\n\n\
-            Options:\n\
-            {}-h | --help: Shows this text.\n\
-            {}-t | --type <{}>: Type of the elf file\n\n\
-            (Supported elf files are: data_fld_maplink.elf, data_shop.elf)",
-            "    ",
-            "    ",
+        printdoc!("
+            Usage: paintelf [options] <path to decompressed .elf>
+            
+            Options:
+              -h | --help: Shows this text.
+              -t | --type <{}>: Type of the elf file
+            
+            (Supported elf files are: data_fld_maplink.elf, data_shop.elf)
+            ",
             FileType::ALL_VALUES.join("|")
         );
         return Ok(());
@@ -140,7 +142,7 @@ fn disassemble_elf(input_file_path: &Path, file_type: FileType, is_debug: bool) 
     // debug features to facilitate matching re-serializing
     if is_debug {
         // apply relocations and output the result (debug only)
-        let write_section_debug: _ = |section: &Section| -> Result<()> {
+        let write_section_debug = |section: &Section| -> Result<()> {
             let out_section: Vec<u8> = link_section_debug(section, &elf_file.symbols)?;
             let out_path = input_file_path.with_extension(section.name.strip_prefix(".").unwrap_or(&section.name));
             fs::write(out_path, &out_section)?;

@@ -88,13 +88,13 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
     let mut ctx: WriteCtxImpl<ElfWriteDomain> = ElfWriteDomain::new_ctx();
     match data {
         FileData::Maplink(maplink_areas) => {
-            write_maplink(&mut ctx, &mut domain, &maplink_areas)?;
+            write_maplink(&mut ctx, &mut domain, maplink_areas)?;
         },
         FileData::Shop(shop_list) => {
-            write_shops(&mut ctx, &mut domain, &shop_list)?;
+            write_shops(&mut ctx, &mut domain, shop_list)?;
         },
         FileData::MapId(map_groups) => {
-            write_mapid(&mut ctx, &mut domain, &map_groups)?;
+            write_mapid(&mut ctx, &mut domain, map_groups)?;
         },
         FileData::Dispos(_) => todo!(),
     };
@@ -297,6 +297,7 @@ pub fn write_symtab(
     let mut strtab = Cursor::new(initial_content);
     strtab.seek(SeekFrom::End(0))?;
     
+    #[allow(clippy::let_with_type_underscore)]
     let mut write_symbol: _ = |writer: &mut Cursor<Vec<u8>>, symbol_count: &mut usize, symbol: &SymbolDeclaration, st_info: u8| -> Result<()> {
         // serialize name
         let name_ptr = if let Some(symbol_name) = symbol.name.as_str() {

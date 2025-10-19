@@ -30,7 +30,7 @@ pub fn test_reserialize_from_content(input_file_path: &Path, output_file: bool, 
     base_name.push("_match_test");
     let mut out_path = input_file_path.with_file_name(base_name);
     
-    let mut write_section_debug: _ = |section: &Section| -> Result<()> {
+    let mut write_section_debug = |section: &Section| -> Result<()> {
         let name = section.name
             .strip_prefix(".")
             .unwrap_or(&section.name)
@@ -45,14 +45,14 @@ pub fn test_reserialize_from_content(input_file_path: &Path, output_file: bool, 
         Ok(())
     };
     
-    let test_section_matching: _ = |section: &Section| -> Result<()> {
+    let test_section_matching = |section: &Section| -> Result<()> {
         let Some(original_section) = original.get_section(&section.name) else {
             bail!("Elf file contains section '{}', which did not exist originally", section.name);
         };
         
         let original_content = link_section_debug(original_section, &original.symbols)?;
         
-        assert!(&original_content == &section.content, "Re-serialized section '{}' does not match", section.name);
+        assert!(original_content == section.content, "Re-serialized section '{}' does not match", section.name);
         
         if !output_file {
             println!("Section '{}' matches", section.name)
@@ -92,7 +92,7 @@ pub fn test_reserialize_from_content(input_file_path: &Path, output_file: bool, 
         println!("[debug] Re-serialized elf file to {}", out_path.file_name().unwrap().display());
     }
     
-    assert!(original_bytes == &final_elf_bytes, "Re-serialized elf file does not match");
+    assert!(original_bytes == final_elf_bytes, "Re-serialized elf file does not match");
     
     Ok(())
 }
