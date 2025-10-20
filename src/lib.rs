@@ -81,7 +81,7 @@ pub struct RelDeclaration {
 
 pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) -> Result<ElfContainer> {
     let mut block_offsets = Vec::new();
-    let mut domain = ElfWriteDomain::new(apply_debug_relocations);
+    let mut domain = ElfWriteDomain::new(data.string_dedup_size(), apply_debug_relocations);
     
     // serialize data
     let mut ctx: WriteCtxImpl<ElfWriteDomain> = ElfWriteDomain::new_ctx();

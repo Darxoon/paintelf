@@ -5,7 +5,7 @@ use anyhow::Result;
 use crate::{
     binutil::ElfReadDomain,
     elf::container::ElfContainer,
-    formats::{FileData, maplink::read_maplink, shop::read_shops},
+    formats::{mapid::read_mapid, maplink::read_maplink, shop::read_shops, FileData},
     matching::{test_reserialize_directly, test_reserialize_from_content},
 };
 
@@ -81,5 +81,17 @@ fn reserialize_shop_directly() {
 fn reserialize_shop_from_content() {
     reserialize_any_from_content("test/data_shop.elf", |reader, domain| {
         read_shops(reader, domain)
+    });
+}
+
+#[test]
+fn reserialize_mapid_directly() {
+    reserialize_any_directly("test/data_fld_mapid.elf");
+}
+
+#[test]
+fn reserialize_mapid_from_content() {
+    reserialize_any_from_content("test/data_fld_mapid.elf", |reader, domain| {
+        read_mapid(reader, domain)
     });
 }

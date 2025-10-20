@@ -73,4 +73,14 @@ impl FileData {
             _ => 0,
         }
     }
+    
+    // this is so confusing
+    pub fn string_dedup_size(&self) -> u64 {
+        match self {
+            FileData::Maplink(_) => 0xc32c,
+            FileData::MapId(_) => 0xa028,
+            // ?
+            _ => 0xc32c,
+        }
+    }
 }

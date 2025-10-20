@@ -222,6 +222,7 @@ pub struct ElfWriteDomain {
     pub string_map: HashMap<String, HeapToken>,
     pub symbol_declarations: Vec<SymbolDeclaration>,
     pub relocations: Vec<RelDeclaration>,
+    pub string_dedup_size: u64,
     pub apply_debug_relocations: bool,
     prev_string_len: usize,
 }
@@ -233,11 +234,12 @@ impl EndianSpecific for ElfWriteDomain {
 }
 
 impl ElfWriteDomain {
-    pub fn new(apply_debug_relocations: bool) -> Self {
+    pub fn new(string_dedup_size: u64, apply_debug_relocations: bool) -> Self {
         Self {
             string_map: HashMap::new(),
             symbol_declarations: Vec::new(),
             relocations: Vec::new(),
+            string_dedup_size,
             apply_debug_relocations,
             prev_string_len: 0,
         }
@@ -255,7 +257,7 @@ impl ElfWriteDomain {
     pub fn write_string(&mut self, ctx: &mut impl WriteCtx, value: &str, args: WriteStringArgs) -> Result<()> {
         // Search for if this string has already been written before
         // TODO: account for substrings (use crate memchr?)
-        let existing_token = if args.deduplicate && ctx.position()? < 0xc32c { 
+        let existing_token = if args.deduplicate && ctx.position()? < self.string_dedup_size { 
             self.string_map.get(value).copied()
         } else {
             None
