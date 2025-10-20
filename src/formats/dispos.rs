@@ -17,6 +17,9 @@ use crate::{
 };
 
 pub fn read_dispos(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<FileData> {
+    eprintln!("Warning: data_dispos is not fully supported yet. The yaml format is not final yet \
+    and rebuilding the elf is not implemented yet.");
+    
     let data_count_symbol = domain.find_symbol("all_disposDataTblLen__Q2_4data10DisposData")?;
     reader.seek(SeekFrom::Start(data_count_symbol.offset().into()))?;
     let data_count = reader.read_u32::<BigEndian>()?;

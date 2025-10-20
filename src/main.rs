@@ -2,7 +2,7 @@ use std::{
     env, fs,
     io::Cursor,
     panic,
-    path::{Path, PathBuf},
+    path::{Path, PathBuf}, process::exit,
 };
 
 use anyhow::{Result, anyhow, bail};
@@ -77,7 +77,7 @@ fn main() -> Result<()> {
     let input_file_path = PathBuf::from(input_file_path_str);
     
     if input_file_path_str.ends_with(".yaml") {
-        reassemble_elf(&input_file_path)
+        reassemble_elf(&input_file_path, is_debug)
     } else {
         let Some(file_type) = file_type else {
             bail!("Expected one of these file types to be passed with '--type' argument: {}",
@@ -88,9 +88,14 @@ fn main() -> Result<()> {
     }
 }
 
-fn reassemble_elf(input_file_path: &Path) -> Result<()> {
+fn reassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
     let input_file = fs::read_to_string(input_file_path)?;
     let data: FileData = serde_yaml_bw::from_str(&input_file)?;
+    
+    if matches!(data, FileData::Dispos(_)) && !is_debug {
+        eprintln!("Rebuilding data_dispos.elf is not supported yet!");
+        exit(1);
+    }
     
     let out_elf = reassemble_elf_container(&data, false)?;
     
