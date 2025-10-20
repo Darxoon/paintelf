@@ -2,17 +2,13 @@ use core::{
     cmp::Ordering,
     fmt::{self, Display},
 };
-use std::{
-    
-    collections::HashMap,
-    io::{Cursor, Read, Seek, SeekFrom, Write},
-};
+use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
 use anyhow::{Result, anyhow};
 use binrw::BinWrite;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
-use vivibin::{HeapToken, WriteCtxImpl, WriteDomainExt};
+use vivibin::{HeapToken, WriteCtxImpl, WriteDomainExt, util::HashMap};
 
 use crate::{
     binutil::ElfWriteDomain,

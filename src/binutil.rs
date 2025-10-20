@@ -3,18 +3,15 @@ use core::{
     mem::{self, ManuallyDrop, transmute},
     ptr,
 };
-use std::{
-    collections::HashMap,
-    io::SeekFrom,
-};
+use std::io::SeekFrom;
 
-use anyhow::{anyhow, bail, ensure, Result};
+use anyhow::{Result, anyhow, bail, ensure};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use vivibin::{
     CanRead, CanReadVec, CanWrite, CanWriteSlice, CanWriteSliceWithArgs, CanWriteWithArgs,
     EndianSpecific, Endianness, HeapToken, ReadDomain, ReadDomainExt, Reader, WriteCtx,
-    WriteDomain, WriteDomainExt, Writer,
+    WriteDomain, WriteDomainExt, Writer, util::HashMap,
 };
 
 use crate::{

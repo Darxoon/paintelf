@@ -1,17 +1,17 @@
 use core::mem::{self, offset_of};
-use std::{
-    collections::HashMap,
-    io::{Cursor, SeekFrom, Write},
-};
+use std::io::{Cursor, SeekFrom, Write};
 
 use anyhow::{Error, Result, anyhow, bail};
 use binrw::{BinRead, BinWrite};
 use indexmap::IndexMap;
 use memchr::memmem;
-use vivibin::{Reader, Writer, align_to};
+use vivibin::{Reader, Writer, align_to, util::HashMap};
 
 use crate::{
-    elf::{Relocation, Section, SectionHeader, SectionType, Symbol, SymbolHeader, SHF_ALLOC, SHF_INFO_LINK},
+    elf::{
+        Relocation, SHF_ALLOC, SHF_INFO_LINK, Section, SectionHeader, SectionType, Symbol,
+        SymbolHeader,
+    },
     util::{pointer::Pointer, read_string},
 };
 
