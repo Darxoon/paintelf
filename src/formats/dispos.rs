@@ -59,7 +59,7 @@ pub struct DisposArea {
 }
 
 impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer> + CanReadVec> Readable<D> for DisposArea {
-    fn from_reader<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
+    fn from_reader_unboxed<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
         // TODO: provide actual mechanism for this
         let ptr: Pointer = domain.read(reader)?;
         scoped_reader_pos!(reader);
@@ -81,7 +81,7 @@ pub struct DisposNpc {
 }
 
 impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer> + CanReadVec> Readable<D> for DisposNpc {
-    fn from_reader<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
+    fn from_reader_unboxed<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
         // TODO: provide actual mechanism for this
         let ptr: Pointer = domain.read(reader)?;
         scoped_reader_pos!(reader);
@@ -98,7 +98,7 @@ impl<D> Writable<D> for DisposNpc
 where
     D: CanWriteWithArgs<String, WriteStringArgs> + CanWrite<Option<String>> + CanWriteSliceWithArgs<Npc, Option<SymbolName>>,
 {
-    fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
+    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
         // TODO: turning off deduplication is a hack, figure out serialization order better
         domain.write_args(ctx, &self.map_id, WriteStringArgs { deduplicate: false })?;
         domain.write_slice_args_fallback(ctx, &self.npcs, Some(SymbolName::InternalNamed(self.map_id.clone())))?;
@@ -197,7 +197,7 @@ pub struct DisposMobj {
 }
 
 impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer> + CanReadVec> Readable<D> for DisposMobj {
-    fn from_reader<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
+    fn from_reader_unboxed<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
         let ptr: Pointer = domain.read(reader)?;
         scoped_reader_pos!(reader);
         reader.seek(SeekFrom::Start(ptr.into()))?;
@@ -213,7 +213,7 @@ impl<D> Writable<D> for DisposMobj
 where
     D: CanWriteWithArgs<String, WriteStringArgs> + CanWrite<Option<String>> + CanWriteSliceWithArgs<Mobj, Option<SymbolName>>,
 {
-    fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
+    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
         // TODO: turning off deduplication is a hack, figure out serialization order better
         domain.write_args(ctx, &self.map_id, WriteStringArgs { deduplicate: false })?;
         domain.write_slice_args_fallback(ctx, &self.mobjs, Some(SymbolName::InternalNamed(self.map_id.clone())))?;
@@ -261,7 +261,7 @@ pub struct DisposItem {
 }
 
 impl<D: CanRead<String> + CanRead<Pointer> + CanReadVec> Readable<D> for DisposItem {
-    fn from_reader<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
+    fn from_reader_unboxed<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
         let ptr: Pointer = domain.read(reader)?;
         scoped_reader_pos!(reader);
         reader.seek(SeekFrom::Start(ptr.into()))?;
@@ -278,7 +278,7 @@ impl<D> Writable<D> for DisposItem
 where
     D: CanWriteWithArgs<String, WriteStringArgs> + CanWriteSliceWithArgs<Item, Option<SymbolName>>,
 {
-    fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
+    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
         // TODO: turning off deduplication is a hack, figure out serialization order better
         domain.write_args(ctx, &self.map_id, WriteStringArgs { deduplicate: false })?;
         domain.write_slice_args_fallback(ctx, &self.items, Some(SymbolName::InternalNamed(self.map_id.clone())))?;

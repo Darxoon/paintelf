@@ -60,7 +60,7 @@ pub struct ChrData {
 pub struct NpcDefPtr(NpcDef);
 
 impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer>> Readable<D> for NpcDefPtr {
-    fn from_reader<R: Reader>(reader: &mut R, domain: D) -> Result<Self> {
+    fn from_reader_unboxed<R: Reader>(reader: &mut R, domain: D) -> Result<Self> {
         let ptr: Pointer = domain.read(reader)?;
         scoped_reader_pos!(reader);
         
@@ -123,7 +123,7 @@ pub struct NpcDef {
 pub struct MobjDefPtr(MobjDef);
 
 impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer>> Readable<D> for MobjDefPtr {
-    fn from_reader<R: Reader>(reader: &mut R, domain: D) -> Result<Self> {
+    fn from_reader_unboxed<R: Reader>(reader: &mut R, domain: D) -> Result<Self> {
         let ptr: Pointer = domain.read(reader)?;
         scoped_reader_pos!(reader);
         

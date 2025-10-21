@@ -160,13 +160,15 @@ impl ReadDomain for ElfReadDomain<'_> {
         Ok(result)
     }
 
-    // at some point vivibin will properly support these :P
-    fn read_std_box_of<T, R: vivibin::Reader>(self, _reader: &mut R, _read_content: impl Fn(&mut R) -> Result<T>) -> Result<Option<Box<T>>> {
-        Ok(None)
-    }
-
-    fn read_box<T, R: vivibin::Reader>(self, _reader: &mut R, _parser: impl FnOnce(&mut R, Self) -> Result<T>) -> Result<Option<T>> {
-        Ok(None)
+    fn read_box_nullable<T, R: Reader>(self, reader: &mut R, read_content: impl FnOnce(&mut R) -> Result<T>) -> Result<Option<T>> {
+        let Some(ptr) = self.read_pointer_optional(reader)? else {
+            return Ok(None);
+        };
+        
+        scoped_reader_pos!(reader);
+        reader.set_position(ptr)?;
+        
+        read_content(reader).map(Some)
     }
 }
 

@@ -51,7 +51,7 @@ pub struct Shop {
 
 // TODO: vivibin can't pass along SoldItem's Option<String> dependency
 impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer>> Readable<D> for Shop {
-    fn from_reader<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
+    fn from_reader_unboxed<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
         let shop_id: String = domain.read(reader)?;
         let items_ptr: Pointer = domain.read(reader)?;
         
@@ -79,7 +79,7 @@ where
         + CanWrite<Option<String>>
         + CanWriteSliceWithArgs<SoldItem, WriteNullTermiantedSliceArgs>,
 {
-    fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
+    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
         domain.write(ctx, &self.shop_id)?;
         domain.write_slice_args_fallback(ctx, &self.items, WriteNullTermiantedSliceArgs {
             symbol_name: Some(SymbolName::Internal('s')),

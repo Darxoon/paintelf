@@ -55,7 +55,7 @@ impl<D> Writable<D> for MapGroup
 where
     D: CanWriteWithArgs<String, WriteStringArgs> + CanWriteSliceWithArgs<MapDefinition, Option<SymbolName>>,
 {
-    fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
+    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
         // TODO: turning off deduplication is a hack, figure out serialization order better
         domain.write_args(ctx, &self.id, WriteStringArgs { deduplicate: false })?;
         domain.write_slice_args_fallback(ctx, &self.maps, Some(SymbolName::InternalNamed(self.id.clone())))?;
