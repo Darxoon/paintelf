@@ -5,7 +5,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
     CanRead, CanReadVec, CanWrite, CanWriteSliceWithArgs, CanWriteWithArgs, ReadDomainExt,
-    ReadVecFallbackExt, Readable, Reader, Writable, WriteSliceWithArgsFallbackExt,
+    Readable, Reader, Writable, WriteSliceWithArgsFallbackExt,
     scoped_reader_pos,
 };
 
@@ -74,24 +74,13 @@ impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer> + CanReadVe
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Serialize, Deserialize)]
+#[boxed]
+#[extra_read_domain_deps(CanRead<Option<String>>)]
 pub struct DisposNpc {
+    #[require_domain]
     pub map_id: String,
     pub npcs: Vec<Npc>,
-}
-
-impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer> + CanReadVec> Readable<D> for DisposNpc {
-    fn from_reader_unboxed<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
-        // TODO: provide actual mechanism for this
-        let ptr: Pointer = domain.read(reader)?;
-        scoped_reader_pos!(reader);
-        reader.seek(SeekFrom::Start(ptr.into()))?;
-        
-        let map_id: String = domain.read(reader)?;
-        let items: Vec<Npc> = domain.read_std_vec_fallback(reader)?;
-        
-        Ok(Self { map_id, npcs: items })
-    }
 }
 
 impl<D> Writable<D> for DisposNpc
@@ -190,23 +179,13 @@ pub struct Npc {
     pub field_0x134: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Serialize, Deserialize)]
+#[boxed]
+#[extra_read_domain_deps(CanRead<Option<String>>)]
 pub struct DisposMobj {
+    #[require_domain]
     pub map_id: String,
     pub mobjs: Vec<Mobj>,
-}
-
-impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer> + CanReadVec> Readable<D> for DisposMobj {
-    fn from_reader_unboxed<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
-        let ptr: Pointer = domain.read(reader)?;
-        scoped_reader_pos!(reader);
-        reader.seek(SeekFrom::Start(ptr.into()))?;
-        
-        let map_id: String = domain.read(reader)?;
-        let items: Vec<Mobj> = domain.read_std_vec_fallback(reader)?;
-        
-        Ok(Self { map_id, mobjs: items })
-    }
 }
 
 impl<D> Writable<D> for DisposMobj
@@ -254,24 +233,13 @@ pub struct Mobj {
     pub field_0x68: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Serialize, Deserialize)]
+#[boxed]
+#[extra_read_domain_deps(CanRead<Option<String>>)]
 pub struct DisposItem {
+    #[require_domain]
     pub map_id: String,
     pub items: Vec<Item>,
-}
-
-impl<D: CanRead<String> + CanRead<Pointer> + CanReadVec> Readable<D> for DisposItem {
-    fn from_reader_unboxed<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
-        let ptr: Pointer = domain.read(reader)?;
-        scoped_reader_pos!(reader);
-        reader.seek(SeekFrom::Start(ptr.into()))?;
-        
-        
-        let map_id: String = domain.read(reader)?;
-        let items: Vec<Item> = domain.read_std_vec_fallback(reader)?;
-        
-        Ok(Self { map_id, items })
-    }
 }
 
 impl<D> Writable<D> for DisposItem
