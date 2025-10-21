@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::{Result, anyhow, bail};
 use indoc::printdoc;
+use miniserde::json;
 use paintelf::{
     binutil::ElfReadDomain,
     elf::{Section, container::ElfContainer},
@@ -90,7 +91,7 @@ fn main() -> Result<()> {
 
 fn reassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
     let input_file = fs::read_to_string(input_file_path)?;
-    let data: FileData = serde_yaml_bw::from_str(&input_file)?;
+    let data: FileData = json::from_str(&input_file)?;
     
     if matches!(data, FileData::Dispos(_)) && !is_debug {
         eprintln!("Rebuilding data_dispos.elf is not supported yet!");
@@ -139,7 +140,7 @@ fn disassemble_elf(input_file_path: &Path, file_type: FileType, is_debug: bool) 
         FileType::Dispos => read_dispos(&mut reader, domain)?,
     };
     
-    let yaml = serde_yaml_bw::to_string(&maplink)?;
+    let yaml = json::to_string(&maplink);
     
     let out_path = input_file_path.with_extension("yaml");
     fs::write(out_path, yaml)?;

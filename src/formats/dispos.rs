@@ -2,7 +2,7 @@ use std::io::SeekFrom;
 
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
-use serde::{Deserialize, Serialize};
+use miniserde::{Deserialize, Serialize};
 use vivibin::{
     CanRead, CanReadVec, CanWrite, CanWriteSliceWithArgs, CanWriteWithArgs, ReadDomainExt,
     ReadVecFallbackExt, Readable, Reader, Writable, WriteSliceWithArgsFallbackExt,

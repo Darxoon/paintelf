@@ -1,6 +1,7 @@
 use core::fmt::{self, Display};
+use std::borrow::Cow;
 
-use serde::{Deserialize, Serialize};
+use miniserde::{de::Visitor, make_place, ser::Fragment, Deserialize, Serialize};
 
 use crate::formats::{dispos::DisposArea, mapid::MapGroup, maplink::MaplinkArea, shop::Shop};
 
@@ -49,7 +50,7 @@ impl Display for FileType {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub enum FileData {
     Maplink(Vec<MaplinkArea>),
     MapId(Vec<MapGroup>),
@@ -84,3 +85,94 @@ impl FileData {
         }
     }
 }
+
+// deserialize
+make_place!(Place);
+
+impl Visitor for Place<FileData> {
+    fn map(&mut self) -> miniserde::Result<Box<dyn miniserde::de::Map + '_>> {
+        Ok(Box::new(FileDataBuilder {
+            maplink: None,
+            mapid: None,
+            shop: None,
+            dispos: None,
+            out: &mut self.out,
+        }))
+    }
+}
+
+struct FileDataBuilder<'a> {
+    maplink: Option<Vec<MaplinkArea>>,
+    mapid: Option<Vec<MapGroup>>,
+    shop: Option<Vec<Shop>>,
+    dispos: Option<Vec<DisposArea>>,
+    
+    out: &'a mut Option<FileData>,
+}
+
+impl<'a> miniserde::de::Map for FileDataBuilder<'a> {
+    fn key(&mut self, k: &str) -> miniserde::Result<&mut dyn Visitor> {
+        match k {
+            "Maplink" => Ok(Deserialize::begin(&mut self.mapid)),
+            "MapId" => Ok(Deserialize::begin(&mut self.mapid)),
+            "Shop" => Ok(Deserialize::begin(&mut self.shop)),
+            "Dispos" => Ok(Deserialize::begin(&mut self.dispos)),
+            _ => Ok(<dyn Visitor>::ignore()),
+        }
+    }
+
+    fn finish(&mut self) -> miniserde::Result<()> {
+        if let Some(val) = self.maplink.take() {
+            *self.out = Some(FileData::Maplink(val));
+            return Ok(());
+        }
+        if let Some(val) = self.mapid.take() {
+            *self.out = Some(FileData::MapId(val));
+            return Ok(());
+        }
+        if let Some(val) = self.shop.take() {
+            *self.out = Some(FileData::Shop(val));
+            return Ok(());
+        }
+        if let Some(val) = self.dispos.take() {
+            *self.out = Some(FileData::Dispos(val));
+            return Ok(());
+        }
+        Err(miniserde::Error)
+    }
+}
+
+impl Deserialize for FileData {
+    fn begin(out: &mut Option<Self>) -> &mut dyn Visitor {
+        Place::new(out)
+    }
+}
+
+// serialize
+struct FileDataStream<'a> {
+    data: &'a FileData,
+    state: bool,
+}
+
+impl<'a> miniserde::ser::Map for FileDataStream<'a> {
+    fn next(&mut self) -> Option<(Cow<'_, str>, &dyn Serialize)> {
+        if self.state { return None; }
+        self.state = true;
+        Some(match self.data {
+            FileData::Maplink(maplink_areas) => (Cow::Borrowed("Maplink"), maplink_areas),
+            FileData::MapId(map_groups) => (Cow::Borrowed("MapId"), map_groups),
+            FileData::Shop(shops) => (Cow::Borrowed("Shop"), shops),
+            FileData::Dispos(dispos_areas) => (Cow::Borrowed("Dispos"), dispos_areas),
+        })
+    }
+}
+
+impl Serialize for FileData {
+    fn begin(&self) -> miniserde::ser::Fragment<'_> {
+        Fragment::Map(Box::new(FileDataStream {
+            data: self,
+            state: false,
+        }))
+    }
+}
+

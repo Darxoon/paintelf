@@ -2,7 +2,7 @@ use std::io::SeekFrom;
 
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
-use serde::{Deserialize, Serialize};
+use miniserde::{Deserialize, Serialize};
 use vivibin::{
     CanRead, CanWrite, CanWriteSliceWithArgs, Readable, Reader, Writable, WriteCtx, WriteDomainExt,
     WriteSliceWithArgsFallbackExt,
@@ -63,7 +63,7 @@ impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer>> Readable<D
         loop {
             let value = SoldItem::from_reader(reader, domain)?;
             
-            if value == SoldItem::default() {
+            if value == Default::default() {
                 break;
             }
             
