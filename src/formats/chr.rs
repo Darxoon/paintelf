@@ -8,6 +8,9 @@ use vivibin::{CanRead, Readable, Reader, Writable};
 use crate::{binutil::ElfReadDomain, formats::FileData, scoped_reader_pos, util::pointer::Pointer};
 
 pub fn read_chr(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<FileData> {
+    eprintln!("Warning: data_chr is not fully supported yet. The yaml format is not final yet \
+    and rebuilding the elf is not implemented yet.");
+    
     // npcs
     let npc_count_symbol = domain.find_symbol("npcDataTableLen__Q2_4data3chr")?;
     reader.seek(SeekFrom::Start(npc_count_symbol.offset().into()))?;

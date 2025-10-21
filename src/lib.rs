@@ -97,6 +97,7 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
         },
         FileData::Dispos(_) => todo!(),
         FileData::Chr(_) => todo!(),
+        FileData::Lct(_) => todo!(),
     };
     let result_buffer = ctx.to_buffer(&mut domain, Some(&mut block_offsets))?;
     
