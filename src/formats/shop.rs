@@ -4,8 +4,7 @@ use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
-    CanRead, CanReadVec, CanWrite, CanWriteSliceWithArgs, ReadVecFallbackExt, Readable, Reader,
-    Writable, WriteCtx, WriteDomainExt, WriteSliceWithArgsFallbackExt,
+    scoped_reader_pos, CanRead, CanWrite, CanWriteSliceWithArgs, Readable, Reader, Writable, WriteCtx, WriteDomainExt, WriteSliceWithArgsFallbackExt
 };
 
 use crate::{
@@ -51,10 +50,24 @@ pub struct Shop {
 }
 
 // TODO: vivibin can't pass along SoldItem's Option<String> dependency
-impl<D: CanReadVec + CanRead<String> + CanRead<Option<String>> + CanRead<Pointer>> Readable<D> for Shop {
+impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer>> Readable<D> for Shop {
     fn from_reader<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
         let shop_id: String = domain.read(reader)?;
-        let items: Vec<SoldItem> = domain.read_std_vec_fallback(reader)?;
+        let items_ptr: Pointer = domain.read(reader)?;
+        
+        // TODO: provide abstraction for this
+        scoped_reader_pos!(reader);
+        reader.seek(SeekFrom::Start(items_ptr.into()))?;
+        let mut items = Vec::new();
+        loop {
+            let value = SoldItem::from_reader(reader, domain)?;
+            
+            if value == SoldItem::default() {
+                break;
+            }
+            
+            items.push(value);
+        }
         
         Ok(Self { shop_id, items })
     }
