@@ -4,8 +4,8 @@ use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
-    CanRead, CanReadVec, CanWriteSliceWithArgs, CanWriteWithArgs, ReadVecFallbackExt, Readable,
-    Reader, Writable, WriteCtx, WriteDomainExt, WriteSliceWithArgsFallbackExt,
+    CanWriteSliceWithArgs, CanWriteWithArgs, Readable, Reader, Writable, WriteCtx, WriteDomainExt,
+    WriteSliceWithArgsFallbackExt,
 };
 
 use crate::{
@@ -44,19 +44,11 @@ pub fn write_mapid(ctx: &mut impl WriteCtx, domain: &mut ElfWriteDomain, areas: 
     Ok(())
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Readable, Serialize, Deserialize)]
 pub struct MapGroup {
+    #[require_domain]
     pub id: String,
     pub maps: Vec<MapDefinition>,
-}
-
-impl<D: CanRead<String> + CanReadVec> Readable<D> for MapGroup {
-    fn from_reader<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
-        let id: String = domain.read(reader)?;
-        let maps: Vec<MapDefinition> = domain.read_std_vec_fallback(reader)?;
-        
-        Ok(Self { id, maps })
-    }
 }
 
 impl<D> Writable<D> for MapGroup

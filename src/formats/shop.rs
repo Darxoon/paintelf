@@ -4,15 +4,14 @@ use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
-    CanRead, CanWrite, CanWriteSliceWithArgs, Readable, Reader, Writable, WriteCtx, WriteDomainExt,
-    WriteSliceWithArgsFallbackExt,
+    CanRead, CanReadVec, CanWrite, CanWriteSliceWithArgs, ReadVecFallbackExt, Readable, Reader,
+    Writable, WriteCtx, WriteDomainExt, WriteSliceWithArgsFallbackExt,
 };
 
 use crate::{
     SymbolName,
     binutil::{ElfReadDomain, ElfWriteDomain, WriteNullTermiantedSliceArgs},
     formats::FileData,
-    scoped_reader_pos,
     util::pointer::Pointer,
 };
 
@@ -51,24 +50,11 @@ pub struct Shop {
     pub items: Vec<SoldItem>,
 }
 
-impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer>> Readable<D> for Shop {
+// TODO: vivibin can't pass along SoldItem's Option<String> dependency
+impl<D: CanReadVec + CanRead<String> + CanRead<Option<String>> + CanRead<Pointer>> Readable<D> for Shop {
     fn from_reader<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
         let shop_id: String = domain.read(reader)?;
-        let items_ptr: Pointer = domain.read(reader)?;
-        
-        // TODO: provide abstraction for this
-        scoped_reader_pos!(reader);
-        reader.seek(SeekFrom::Start(items_ptr.into()))?;
-        let mut items = Vec::new();
-        loop {
-            let value = SoldItem::from_reader(reader, domain)?;
-            
-            if value == SoldItem::default() {
-                break;
-            }
-            
-            items.push(value);
-        }
+        let items: Vec<SoldItem> = domain.read_std_vec_fallback(reader)?;
         
         Ok(Self { shop_id, items })
     }
@@ -76,7 +62,9 @@ impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer>> Readable<D
 
 impl<D> Writable<D> for Shop
 where
-    D: CanWrite<String> + CanWrite<Option<String>> + CanWriteSliceWithArgs<SoldItem, WriteNullTermiantedSliceArgs>,
+    D: CanWrite<String>
+        + CanWrite<Option<String>>
+        + CanWriteSliceWithArgs<SoldItem, WriteNullTermiantedSliceArgs>,
 {
     fn to_writer(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
         domain.write(ctx, &self.shop_id)?;

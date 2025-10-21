@@ -4,8 +4,8 @@ use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
-    CanRead, CanReadVec, CanWriteSliceWithArgs, CanWriteWithArgs, ReadVecFallbackExt, Readable,
-    Reader, Writable, WriteCtx, WriteDomainExt, WriteSliceWithArgsFallbackExt,
+    CanWriteSliceWithArgs, CanWriteWithArgs, Readable, Reader, Writable, WriteCtx, WriteDomainExt,
+    WriteSliceWithArgsFallbackExt,
 };
 
 use crate::{
@@ -44,19 +44,11 @@ pub fn write_maplink(ctx: &mut impl WriteCtx, domain: &mut ElfWriteDomain, areas
     Ok(())
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Readable, Serialize, Deserialize)]
 pub struct MaplinkArea {
+    #[require_domain]
     pub map_name: String,
     pub links: Vec<Link>,
-}
-
-impl<D: CanRead<String> + CanReadVec> Readable<D> for MaplinkArea {
-    fn from_reader<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
-        let map_name: String = domain.read(reader)?;
-        let links: Vec<Link> = domain.read_std_vec_fallback(reader)?;
-        
-        Ok(Self { map_name, links })
-    }
 }
 
 impl<D> Writable<D> for MaplinkArea
