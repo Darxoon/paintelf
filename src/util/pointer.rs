@@ -5,6 +5,7 @@ use std::{io::{Cursor, Read, Seek, Write}};
 use anyhow::Result;
 use binrw::{BinRead, BinWrite};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use serde::{Deserialize, Serialize};
 
 macro_rules! from_type {
     ($t:ident, $from:ty) => {
@@ -79,7 +80,7 @@ macro_rules! into_type_unwrap {
     };
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, BinRead, BinWrite)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, BinRead, BinWrite, Serialize, Deserialize)]
 pub struct Pointer(pub u32);
 
 impl Pointer {

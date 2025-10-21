@@ -10,7 +10,7 @@ use indoc::printdoc;
 use paintelf::{
     binutil::ElfReadDomain,
     elf::{Section, container::ElfContainer},
-    formats::{dispos::read_dispos, mapid::read_mapid, maplink::read_maplink, shop::read_shops, FileData, FileType},
+    formats::{chr::read_chr, dispos::read_dispos, mapid::read_mapid, maplink::read_maplink, shop::read_shops, FileData, FileType},
     link_section_debug,
     matching::{test_reserialize_directly, test_reserialize_from_content},
     reassemble_elf_container,
@@ -92,7 +92,7 @@ fn reassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
     let input_file = fs::read_to_string(input_file_path)?;
     let data: FileData = serde_yaml_bw::from_str(&input_file)?;
     
-    if matches!(data, FileData::Dispos(_)) && !is_debug {
+    if matches!(data, FileData::Dispos(_) | FileData::Chr(_)) && !is_debug {
         eprintln!("Rebuilding data_dispos.elf is not supported yet!");
         exit(1);
     }
@@ -124,7 +124,7 @@ fn disassemble_elf(input_file_path: &Path, file_type: FileType, is_debug: bool) 
     };
     
     let rodata_section = match file_type {
-        FileType::Dispos => &elf_file.content_sections[".rodata"],
+        FileType::Dispos | FileType::Chr => &elf_file.content_sections[".rodata"],
         _ => content_section,
     };
     
@@ -137,6 +137,7 @@ fn disassemble_elf(input_file_path: &Path, file_type: FileType, is_debug: bool) 
         FileType::MapId => read_mapid(&mut reader, domain)?,
         FileType::Shop => read_shops(&mut reader, domain)?,
         FileType::Dispos => read_dispos(&mut reader, domain)?,
+        FileType::Chr => read_chr(&mut reader, domain)?,
     };
     
     let yaml = serde_yaml_bw::to_string(&maplink)?;

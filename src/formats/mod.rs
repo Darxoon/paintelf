@@ -2,8 +2,9 @@ use core::fmt::{self, Display};
 
 use serde::{Deserialize, Serialize};
 
-use crate::formats::{dispos::DisposArea, mapid::MapGroup, maplink::MaplinkArea, shop::Shop};
+use crate::formats::{chr::ChrData, dispos::DisposArea, mapid::MapGroup, maplink::MaplinkArea, shop::Shop};
 
+pub mod chr;
 pub mod dispos;
 pub mod mapid;
 pub mod maplink;
@@ -15,10 +16,11 @@ pub enum FileType {
     MapId,
     Shop,
     Dispos,
+    Chr,
 }
 
 impl FileType {
-    pub const ALL_VALUES: [&str; 4] = ["maplink", "mapid", "shop", "dispos"];
+    pub const ALL_VALUES: &[&str] = &["maplink", "mapid", "shop", "dispos", "chr"];
     
     pub fn from_string(string: &str) -> Option<FileType> {
         match string {
@@ -26,13 +28,14 @@ impl FileType {
             "mapid" => Some(FileType::MapId),
             "shop" => Some(FileType::Shop),
             "dispos" => Some(FileType::Dispos),
+            "chr" => Some(FileType::Chr),
             _ => None,
         }
     }
     
     pub fn content_section_name(self) -> &'static str {
         match self {
-            FileType::Dispos => ".data",
+            FileType::Dispos | FileType::Chr => ".data",
             _ => ".rodata",
         }
     }
@@ -45,6 +48,7 @@ impl Display for FileType {
             FileType::MapId => "mapid",
             FileType::Shop => "shop",
             FileType::Dispos => "dispos",
+            FileType::Chr => "chr",
         })
     }
 }
@@ -55,6 +59,7 @@ pub enum FileData {
     MapId(Vec<MapGroup>),
     Shop(Vec<Shop>),
     Dispos(Vec<DisposArea>),
+    Chr(ChrData),
 }
 
 impl FileData {
@@ -64,6 +69,7 @@ impl FileData {
             FileData::MapId(_) => "data_fld_mapid.cpp",
             FileData::Shop(_) => "data_shop.cpp",
             FileData::Dispos(_) => todo!(),
+            FileData::Chr(_) => todo!(),
         }
     }
     
