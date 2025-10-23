@@ -2,7 +2,10 @@ use core::fmt::{self, Display};
 
 use serde::{Deserialize, Serialize};
 
-use crate::formats::{chr::ChrData, dispos::DisposArea, lct::AreaLct, mapid::MapGroup, maplink::MaplinkArea, shop::Shop};
+use crate::formats::{
+    chr::ChrData, dispos::DisposArea, lct::AreaLct, mapid::MapGroup, maplink::MaplinkArea,
+    shop::Shop,
+};
 
 pub mod chr;
 pub mod dispos;
@@ -75,7 +78,7 @@ impl FileData {
             FileData::Shop(_) => "data_shop.cpp",
             FileData::Dispos(_) => todo!(),
             FileData::Chr(_) => todo!(),
-            FileData::Lct(_) => todo!(),
+            FileData::Lct(_) => "data_lct.cpp",
         }
     }
     

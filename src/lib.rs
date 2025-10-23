@@ -16,7 +16,9 @@ use crate::{
         Relocation, Section, Symbol, SymbolHeader, SymbolNameGenerator,
         container::{ELF_HEADER_IDENT, ElfContainer, ElfHeader},
     },
-    formats::{FileData, mapid::write_mapid, maplink::write_maplink, shop::write_shops},
+    formats::{
+        FileData, lct::write_lct, mapid::write_mapid, maplink::write_maplink, shop::write_shops,
+    },
     util::pointer::Pointer,
 };
 
@@ -97,7 +99,9 @@ pub fn reassemble_elf_container<C: ElfCategory>(data: &FileData, apply_debug_rel
         },
         FileData::Dispos(_) => todo!(),
         FileData::Chr(_) => todo!(),
-        FileData::Lct(_) => todo!(),
+        FileData::Lct(lcts) => {
+            write_lct(&mut ctx, &mut domain, lcts)?;
+        },
     };
     let result_buffer = ctx.to_buffer(&mut domain, Some(&mut block_offsets))?;
     
@@ -134,7 +138,12 @@ pub fn reassemble_elf_container<C: ElfCategory>(data: &FileData, apply_debug_rel
     };
     
     let mut result = ElfContainer::new(header);
-    result.add_content_section_with_relocations(".rodata", 4, result_buffer, rela_rodata);
+    
+    let content_section_name = match data {
+        FileData::Lct(_) => ".data",
+        _ => ".rodata",
+    };
+    result.add_content_section_with_relocations(content_section_name, 4, result_buffer, rela_rodata);
     
     const SH_STRING_TAB: &[u8] = b"\0.symtab\0.strtab\0.shstrtab\0.rela.rodata\0";
     result.add_string_table_raw(".shstrtab", 0, 1, SH_STRING_TAB.to_owned());
@@ -153,7 +162,11 @@ pub fn write_relocations(
     let mut writer = Cursor::new(Vec::new());
     
     for relocation in relocations {
-        let symbol_idx = symbol_indices.get(&relocation.target_location).unwrap();
+        let symbol_idx = symbol_indices.get(&relocation.target_location)
+            .ok_or_else(|| anyhow!(
+                "No symbol at offset 0x{:x} (pointed at from 0x{:x})",
+                relocation.target_location, relocation.base_location,
+            ))?;
         
         let raw = Relocation::new(relocation.base_location as u32, (symbol_idx << 8 | 1) as u32, 0);
         raw.write(&mut writer)?;

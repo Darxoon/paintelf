@@ -9,9 +9,9 @@ use anyhow::{Result, anyhow, bail, ensure};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use vivibin::{
-    CanRead, CanReadVec, CanWrite, CanWriteSlice, CanWriteSliceWithArgs, CanWriteWithArgs,
-    EndianSpecific, Endianness, HeapCategory, HeapToken, ReadDomain, ReadDomainExt, Reader,
-    WriteCtx, WriteDomain, WriteDomainExt, Writer, util::HashMap,
+    CanRead, CanReadVec, CanWrite, CanWriteBox, CanWriteSlice, CanWriteSliceWithArgs,
+    CanWriteWithArgs, EndianSpecific, Endianness, HeapCategory, HeapToken, ReadDomain,
+    ReadDomainExt, Reader, WriteCtx, WriteDomain, WriteDomainExt, Writer, util::HashMap,
 };
 
 use crate::{
@@ -342,6 +342,30 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
         Ok(())
     }
     
+    pub fn write_box<W: WriteCtx>(
+        &mut self, ctx: &mut W, args: Option<SymbolName>,
+        write_content: impl FnOnce(&mut Self, &mut W) -> Result<()>,
+    ) -> Result<()> {
+        let mut links_size: usize = 0;
+        let token = ctx.allocate_next_block_aligned(None, 4, |ctx| {
+            let start_pos = ctx.position()? as usize;
+            write_content(self, ctx)?;
+            links_size = ctx.position()? as usize - start_pos;
+            Ok(())
+        })?;
+        
+        ctx.write_token::<4>(token)?;
+        
+        if let Some(name) = args {
+            self.put_symbol(SymbolDeclaration {
+                name,
+                offset: token,
+                size: links_size as u32,
+            });
+        }
+        Ok(())
+    }
+    
     pub fn write_slice<T: 'static, W: WriteCtx>(
         &mut self, ctx: &mut W, values: &[T], args: Option<SymbolName>,
         write_content: impl Fn(&mut Self, &mut W, &T) -> Result<()>,
@@ -463,6 +487,19 @@ impl<C: ElfCategory> WriteDomain for ElfWriteDomain<C> {
         Ok(())
     }
 }
+
+impl<C: ElfCategory> CanWriteBox for ElfWriteDomain<C> {
+    fn write_box_of<W: WriteCtx>(
+        &mut self,
+        ctx: &mut W,
+        write_content: impl FnOnce(&mut Self, &mut W) -> Result<()>
+    ) -> Result<()> {
+        // hardcoding 'l' to make lct work is quite a hack
+        self.write_box(ctx, Some(SymbolName::Internal('l')), write_content)
+    }
+}
+
+// TODO: box with args
 
 impl<C: ElfCategory> CanWriteSlice for ElfWriteDomain<C> {
     fn write_slice_of<T: 'static, W: WriteCtx>(
