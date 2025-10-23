@@ -2,9 +2,12 @@ use core::fmt::{self, Display};
 
 use serde::{Deserialize, Serialize};
 
-use crate::formats::{
-    chr::ChrData, dispos::DisposArea, lct::AreaLct, mapid::MapGroup, maplink::MaplinkArea,
-    shop::Shop,
+use crate::{
+    binutil::ElfCategoryType,
+    formats::{
+        chr::ChrData, dispos::DisposArea, lct::AreaLct, mapid::MapGroup, maplink::MaplinkArea,
+        shop::Shop,
+    },
 };
 
 pub mod chr;
@@ -79,6 +82,13 @@ impl FileData {
             FileData::Dispos(_) => todo!(),
             FileData::Chr(_) => todo!(),
             FileData::Lct(_) => "data_lct.cpp",
+        }
+    }
+    
+    pub fn heap_category_type(&self) -> ElfCategoryType {
+        match self {
+            FileData::Lct(_) => ElfCategoryType::Data,
+            _ => ElfCategoryType::Unit,
         }
     }
     

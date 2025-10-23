@@ -28,7 +28,7 @@ pub fn read_lct(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<FileD
     Ok(FileData::Lct(areas))
 }
 
-pub fn write_lct<C: ElfCategory>(ctx: &mut impl WriteCtx, domain: &mut ElfWriteDomain<C>, lcts: &[AreaLct]) -> Result<()> {
+pub fn write_lct<C: ElfCategory>(ctx: &mut impl WriteCtx<Cat = C>, domain: &mut ElfWriteDomain<C>, lcts: &[AreaLct]) -> Result<()> {
     domain.write_symbol(ctx, "all_lctAnimeDataTblLen__Q2_4data3lct", |domain, ctx| {
         domain.write_fallback::<u32>(ctx, &(lcts.len() as u32 + 1))
     })?;
@@ -53,14 +53,14 @@ pub struct AreaLct {
 }
 
 impl<D: CanWrite<String> + CanWriteBox> Writable<D> for AreaLct {
-    fn to_writer_unboxed(&self, ctx: &mut impl WriteCtx, domain: &mut D) -> Result<()> {
+    fn to_writer_unboxed(&self, ctx: &mut impl WriteCtx<Cat = D::Cat>, domain: &mut D) -> Result<()> {
         domain.write(ctx, &self.area_id)?;
         domain.write_box_fallback(ctx, &0u32)?;
         domain.write_fallback(ctx, &(self.maps.len() as u32))?;
         Ok(())
     }
     
-    fn to_writer(&self, ctx: &mut impl WriteCtx, domain: &mut D) -> Result<()> {
+    fn to_writer(&self, ctx: &mut impl WriteCtx<Cat = D::Cat>, domain: &mut D) -> Result<()> {
         domain.write_box_of(ctx, |domain, ctx| {
             self.to_writer_unboxed(ctx, domain)
         })

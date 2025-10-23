@@ -9,7 +9,7 @@ use std::{
 use anyhow::{Result, anyhow, bail};
 use indoc::printdoc;
 use paintelf::{
-    binutil::{ElfReadDomain, UnitCategory},
+    binutil::ElfReadDomain,
     elf::{Section, container::ElfContainer},
     formats::{
         FileData, FileType, chr::read_chr, dispos::read_dispos, lct::read_lct, mapid::read_mapid,
@@ -101,7 +101,7 @@ fn reassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
         exit(1);
     }
     
-    let out_elf = reassemble_elf_container::<UnitCategory>(&data, false)?;
+    let out_elf = reassemble_elf_container(&data, false)?;
     
     // write resulting elf
     let mut base_name = input_file_path.file_stem()

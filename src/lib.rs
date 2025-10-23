@@ -8,10 +8,10 @@ use anyhow::{Result, anyhow};
 use binrw::BinWrite;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
-use vivibin::{HeapToken, WriteCtxImpl, WriteDomainExt, util::HashMap};
+use vivibin::{HeapToken, WriteCtx, WriteCtxImpl, WriteDomainExt, util::HashMap};
 
 use crate::{
-    binutil::{ElfCategory, ElfWriteDomain},
+    binutil::{DataCategory, ElfCategoryType, ElfWriteDomain, UnitCategory},
     elf::{
         Relocation, Section, Symbol, SymbolHeader, SymbolNameGenerator,
         container::{ELF_HEADER_IDENT, ElfContainer, ElfHeader},
@@ -81,29 +81,58 @@ pub struct RelDeclaration {
     pub target_location: usize,
 }
 
-pub fn reassemble_elf_container<C: ElfCategory>(data: &FileData, apply_debug_relocations: bool) -> Result<ElfContainer> {
+pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) -> Result<ElfContainer> {
     let mut block_offsets = Vec::new();
-    let mut domain = ElfWriteDomain::new(data.string_dedup_size(), apply_debug_relocations);
     
     // serialize data
-    let mut ctx: WriteCtxImpl<ElfWriteDomain<C>> = ElfWriteDomain::new_ctx();
-    match data {
-        FileData::Maplink(maplink_areas) => {
-            write_maplink(&mut ctx, &mut domain, maplink_areas)?;
+    let mut data_buffer =  None;
+    let mut rodata_buffer =  None;
+    
+    let (mut symbol_declarations, mut relocations) = match data.heap_category_type() {
+        ElfCategoryType::Unit => {
+            let mut domain = ElfWriteDomain::new(data.string_dedup_size(), apply_debug_relocations);
+            let mut ctx: WriteCtxImpl<UnitCategory> = ElfWriteDomain::new_ctx();
+            match data {
+                FileData::Maplink(maplink_areas) => {
+                    write_maplink(&mut ctx, &mut domain, maplink_areas)?;
+                },
+                FileData::Shop(shop_list) => {
+                    write_shops(&mut ctx, &mut domain, shop_list)?;
+                },
+                FileData::MapId(map_groups) => {
+                    write_mapid(&mut ctx, &mut domain, map_groups)?;
+                },
+                FileData::Dispos(_) => todo!(),
+                FileData::Chr(_) => todo!(),
+                _ => panic!("Type {data:?} does not use heap category Unit"),
+            };
+            
+            rodata_buffer = Some(ctx.to_buffer(&mut domain, Some(&mut block_offsets))?);
+            (domain.symbol_declarations, domain.relocations)
         },
-        FileData::Shop(shop_list) => {
-            write_shops(&mut ctx, &mut domain, shop_list)?;
-        },
-        FileData::MapId(map_groups) => {
-            write_mapid(&mut ctx, &mut domain, map_groups)?;
-        },
-        FileData::Dispos(_) => todo!(),
-        FileData::Chr(_) => todo!(),
-        FileData::Lct(lcts) => {
-            write_lct(&mut ctx, &mut domain, lcts)?;
-        },
+        ElfCategoryType::Data => {
+            let mut domain: ElfWriteDomain<DataCategory> = ElfWriteDomain::new(data.string_dedup_size(), apply_debug_relocations);
+            let mut ctx: WriteCtxImpl<DataCategory> = ElfWriteDomain::new_ctx();
+            match data {
+                FileData::Lct(lcts) => {
+                    write_lct(&mut ctx, &mut domain, lcts)?;
+                },
+                _ => panic!("Type {data:?} does not use heap category Data"),
+            };
+            
+            let data_heap = ctx.heap(&DataCategory::Data);
+            if let Some(data_heap) = data_heap {
+                data_buffer = Some(data_heap.to_buffer(&mut domain, Some(&mut block_offsets))?);
+            }
+            
+            let rodata_heap = ctx.heap(&DataCategory::Rodata);
+            if let Some(rodata_heap) = rodata_heap {
+                rodata_buffer = Some(rodata_heap.to_buffer(&mut domain, Some(&mut block_offsets))?);
+            }
+            
+            (domain.symbol_declarations, domain.relocations)
+        }
     };
-    let result_buffer = ctx.to_buffer(&mut domain, Some(&mut block_offsets))?;
     
     // serialize elf metadata
     let initial_strtab = format!("\0{}\0", data.cpp_file_name()).into_bytes();
@@ -113,9 +142,9 @@ pub fn reassemble_elf_container<C: ElfCategory>(data: &FileData, apply_debug_rel
         initial_strtab,
         &block_offsets,
         &mut symbol_indices,
-        &mut domain.symbol_declarations
+        &mut symbol_declarations,
     )?;
-    let rela_rodata = write_relocations(&symbol_indices, &mut domain.relocations)?;
+    let rela_rodata = write_relocations(&symbol_indices, &mut relocations)?;
     
     // populate new ElfContainer
     // TODO: verify these values are correct in shifted files
@@ -139,11 +168,12 @@ pub fn reassemble_elf_container<C: ElfCategory>(data: &FileData, apply_debug_rel
     
     let mut result = ElfContainer::new(header);
     
-    let content_section_name = match data {
-        FileData::Lct(_) => ".data",
-        _ => ".rodata",
-    };
-    result.add_content_section_with_relocations(content_section_name, 4, result_buffer, rela_rodata);
+    if let Some(data_buffer) = data_buffer {
+        result.add_content_section_with_relocations(".data", 4, data_buffer, rela_rodata.clone());
+    }
+    if let Some(rodata_buffer) = rodata_buffer {
+        result.add_content_section_with_relocations(".rodata", 4, rodata_buffer, rela_rodata);
+    }
     
     const SH_STRING_TAB: &[u8] = b"\0.symtab\0.strtab\0.shstrtab\0.rela.rodata\0";
     result.add_string_table_raw(".shstrtab", 0, 1, SH_STRING_TAB.to_owned());

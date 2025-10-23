@@ -87,7 +87,7 @@ impl<D> Writable<D> for DisposNpc
 where
     D: CanWriteWithArgs<String, WriteStringArgs> + CanWrite<Option<String>> + CanWriteSliceWithArgs<Npc, Option<SymbolName>>,
 {
-    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
+    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<Cat = D::Cat>, domain: &mut D) -> Result<()> {
         // TODO: turning off deduplication is a hack, figure out serialization order better
         domain.write_args(ctx, &self.map_id, WriteStringArgs { deduplicate: false })?;
         domain.write_slice_args_fallback(ctx, &self.npcs, Some(SymbolName::InternalNamed(self.map_id.clone())))?;
@@ -192,7 +192,7 @@ impl<D> Writable<D> for DisposMobj
 where
     D: CanWriteWithArgs<String, WriteStringArgs> + CanWrite<Option<String>> + CanWriteSliceWithArgs<Mobj, Option<SymbolName>>,
 {
-    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
+    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<Cat = D::Cat>, domain: &mut D) -> Result<()> {
         // TODO: turning off deduplication is a hack, figure out serialization order better
         domain.write_args(ctx, &self.map_id, WriteStringArgs { deduplicate: false })?;
         domain.write_slice_args_fallback(ctx, &self.mobjs, Some(SymbolName::InternalNamed(self.map_id.clone())))?;
@@ -246,7 +246,7 @@ impl<D> Writable<D> for DisposItem
 where
     D: CanWriteWithArgs<String, WriteStringArgs> + CanWriteSliceWithArgs<Item, Option<SymbolName>>,
 {
-    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
+    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<Cat = D::Cat>, domain: &mut D) -> Result<()> {
         // TODO: turning off deduplication is a hack, figure out serialization order better
         domain.write_args(ctx, &self.map_id, WriteStringArgs { deduplicate: false })?;
         domain.write_slice_args_fallback(ctx, &self.items, Some(SymbolName::InternalNamed(self.map_id.clone())))?;

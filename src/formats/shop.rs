@@ -30,7 +30,7 @@ pub fn read_shops(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<Fil
     Ok(FileData::Shop(shop_list))
 }
 
-pub fn write_shops<C: ElfCategory>(ctx: &mut impl WriteCtx, domain: &mut ElfWriteDomain<C>, shops: &[Shop]) -> Result<()> {
+pub fn write_shops<C: ElfCategory>(ctx: &mut impl WriteCtx<Cat = C>, domain: &mut ElfWriteDomain<C>, shops: &[Shop]) -> Result<()> {
     domain.write_symbol(ctx, "shopList__Q2_4data4shop", |domain, ctx| {
         for shop in shops {
             shop.to_writer(ctx, domain)?;
@@ -80,7 +80,7 @@ where
         + CanWrite<Option<String>>
         + CanWriteSliceWithArgs<SoldItem, WriteNullTermiantedSliceArgs>,
 {
-    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
+    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<Cat = D::Cat>, domain: &mut D) -> Result<()> {
         domain.write(ctx, &self.shop_id)?;
         domain.write_slice_args_fallback(ctx, &self.items, WriteNullTermiantedSliceArgs {
             symbol_name: Some(SymbolName::Internal('s')),

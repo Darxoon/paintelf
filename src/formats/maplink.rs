@@ -29,7 +29,7 @@ pub fn read_maplink(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<F
     Ok(FileData::Maplink(areas))
 }
 
-pub fn write_maplink<C: ElfCategory>(ctx: &mut impl WriteCtx, domain: &mut ElfWriteDomain<C>, areas: &[MaplinkArea]) -> Result<()> {
+pub fn write_maplink<C: ElfCategory>(ctx: &mut impl WriteCtx<Cat = C>, domain: &mut ElfWriteDomain<C>, areas: &[MaplinkArea]) -> Result<()> {
     domain.write_symbol(ctx, "dataCount__Q3_4data3fld7maplink", |domain, ctx| {
         domain.write_fallback::<u32>(ctx, &(areas.len() as u32))
     })?;
@@ -55,7 +55,7 @@ impl<D> Writable<D> for MaplinkArea
 where
     D: CanWriteWithArgs<String, WriteStringArgs> + CanWriteSliceWithArgs<Link, Option<SymbolName>>,
 {
-    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
+    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<Cat = D::Cat>, domain: &mut D) -> Result<()> {
         // TODO: turning off deduplication is a hack, figure out serialization order better
         domain.write_args(ctx, &self.map_name, WriteStringArgs { deduplicate: false })?;
         domain.write_slice_args_fallback(ctx, &self.links, Some(SymbolName::InternalNamed(self.map_name.clone())))?;

@@ -3,7 +3,6 @@ use std::{fs, path::Path};
 use anyhow::{anyhow, bail, Result};
 
 use crate::{
-    binutil::UnitCategory,
     elf::{Section, container::ElfContainer},
     formats::FileData,
     link_section_debug, reassemble_elf_container,
@@ -27,7 +26,7 @@ pub fn test_reserialize_directly(input_file_path: &Path, output_file: bool, orig
 pub fn test_reserialize_from_content(input_file_path: &Path, output_file: bool, original: &ElfContainer, original_bytes: &[u8], deserialized: &FileData) -> Result<()> {
     // test all sections for matching directly
     // (apply relocations directly into section content to make this easier)
-    let debug_elf = reassemble_elf_container::<UnitCategory>(deserialized, true)?;
+    let debug_elf = reassemble_elf_container(deserialized, true)?;
     
     let mut base_name = input_file_path.file_stem()
         .ok_or_else(|| anyhow!("Invalid file path {}", input_file_path.display()))?
@@ -88,7 +87,7 @@ pub fn test_reserialize_from_content(input_file_path: &Path, output_file: bool, 
     }
     
     // test the entire elf file for matching
-    let final_elf = reassemble_elf_container::<UnitCategory>(deserialized, false)?;
+    let final_elf = reassemble_elf_container(deserialized, false)?;
     let final_elf_bytes = final_elf.to_bytes()?;
     
     if output_file {

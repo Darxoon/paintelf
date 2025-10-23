@@ -29,7 +29,7 @@ pub fn read_mapid(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<Fil
     Ok(FileData::MapId(areas))
 }
 
-pub fn write_mapid<C: ElfCategory>(ctx: &mut impl WriteCtx, domain: &mut ElfWriteDomain<C>, areas: &[MapGroup]) -> Result<()> {
+pub fn write_mapid<C: ElfCategory>(ctx: &mut impl WriteCtx<Cat = C>, domain: &mut ElfWriteDomain<C>, areas: &[MapGroup]) -> Result<()> {
     domain.write_symbol(ctx, "dataCount__Q3_4data3fld5mapid", |domain, ctx| {
         domain.write_fallback::<u32>(ctx, &(areas.len() as u32))
     })?;
@@ -55,7 +55,7 @@ impl<D> Writable<D> for MapGroup
 where
     D: CanWriteWithArgs<String, WriteStringArgs> + CanWriteSliceWithArgs<MapDefinition, Option<SymbolName>>,
 {
-    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx, domain: &mut D) -> Result<()> {
+    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<Cat = D::Cat>, domain: &mut D) -> Result<()> {
         // TODO: turning off deduplication is a hack, figure out serialization order better
         domain.write_args(ctx, &self.id, WriteStringArgs { deduplicate: false })?;
         domain.write_slice_args_fallback(ctx, &self.maps, Some(SymbolName::InternalNamed(self.id.clone())))?;
