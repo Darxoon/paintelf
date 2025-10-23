@@ -2,15 +2,19 @@ use std::{
     env, fs,
     io::Cursor,
     panic,
-    path::{Path, PathBuf}, process::exit,
+    path::{Path, PathBuf},
+    process::exit,
 };
 
 use anyhow::{Result, anyhow, bail};
 use indoc::printdoc;
 use paintelf::{
-    binutil::ElfReadDomain,
-    elf::{container::ElfContainer, Section},
-    formats::{chr::read_chr, dispos::read_dispos, lct::read_lct, mapid::read_mapid, maplink::read_maplink, shop::read_shops, FileData, FileType},
+    binutil::{ElfReadDomain, UnitCategory},
+    elf::{Section, container::ElfContainer},
+    formats::{
+        FileData, FileType, chr::read_chr, dispos::read_dispos, lct::read_lct, mapid::read_mapid,
+        maplink::read_maplink, shop::read_shops,
+    },
     link_section_debug,
     matching::{test_reserialize_directly, test_reserialize_from_content},
     reassemble_elf_container,
@@ -97,7 +101,7 @@ fn reassemble_elf(input_file_path: &Path, is_debug: bool) -> Result<()> {
         exit(1);
     }
     
-    let out_elf = reassemble_elf_container(&data, false)?;
+    let out_elf = reassemble_elf_container::<UnitCategory>(&data, false)?;
     
     // write resulting elf
     let mut base_name = input_file_path.file_stem()

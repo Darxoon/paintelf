@@ -3,15 +3,15 @@ use core::{
     mem::{self, ManuallyDrop, transmute},
     ptr,
 };
-use std::io::SeekFrom;
+use std::{io::SeekFrom, marker::PhantomData};
 
 use anyhow::{Result, anyhow, bail, ensure};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use vivibin::{
     CanRead, CanReadVec, CanWrite, CanWriteSlice, CanWriteSliceWithArgs, CanWriteWithArgs,
-    EndianSpecific, Endianness, HeapToken, ReadDomain, ReadDomainExt, Reader, WriteCtx,
-    WriteDomain, WriteDomainExt, Writer, util::HashMap,
+    EndianSpecific, Endianness, HeapCategory, HeapToken, ReadDomain, ReadDomainExt, Reader,
+    WriteCtx, WriteDomain, WriteDomainExt, Writer, util::HashMap,
 };
 
 use crate::{
@@ -203,6 +203,37 @@ impl CanRead<Option<String>> for ElfReadDomain<'_> {
 }
 
 // serializing
+// TODO: this has the potential to cause a lot of code bloat :/
+pub trait ElfCategory: HeapCategory + Copy {
+    fn string() -> Self;
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnitCategory;
+
+impl HeapCategory for UnitCategory {}
+
+impl ElfCategory for UnitCategory {
+    fn string() -> Self {
+        Self
+    }
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum DataCategory {
+    #[default]
+    Data,
+    Rodata,
+}
+
+impl HeapCategory for DataCategory {}
+
+impl ElfCategory for DataCategory {
+    fn string() -> Self {
+        Self::Rodata
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct WriteStringArgs {
     pub deduplicate: bool,
@@ -220,22 +251,25 @@ pub struct WriteNullTermiantedSliceArgs {
 }
 
 #[derive(Clone)]
-pub struct ElfWriteDomain {
+pub struct ElfWriteDomain<C: ElfCategory> {
     pub string_map: HashMap<String, HeapToken>,
     pub symbol_declarations: Vec<SymbolDeclaration>,
     pub relocations: Vec<RelDeclaration>,
     pub string_dedup_size: u64,
     pub apply_debug_relocations: bool,
+    
     prev_string_len: usize,
+    
+    _marker: PhantomData<C>,
 }
 
-impl EndianSpecific for ElfWriteDomain {
+impl<C: ElfCategory> EndianSpecific for ElfWriteDomain<C> {
     fn endianness(&self) -> Endianness {
         Endianness::Big
     }
 }
 
-impl ElfWriteDomain {
+impl<C: ElfCategory> ElfWriteDomain<C> {
     pub fn new(string_dedup_size: u64, apply_debug_relocations: bool) -> Self {
         Self {
             string_map: HashMap::new(),
@@ -244,6 +278,7 @@ impl ElfWriteDomain {
             string_dedup_size,
             apply_debug_relocations,
             prev_string_len: 0,
+            _marker: PhantomData,
         }
     }
     
@@ -280,7 +315,7 @@ impl ElfWriteDomain {
             }
             
             let mut name_size: usize = 0;
-            let new_token = ctx.allocate_next_block_aligned(alignment, |ctx| {
+            let new_token = ctx.allocate_next_block_aligned(None, alignment, |ctx| {
                 let start_pos = ctx.position()? as usize;
                 ctx.write_c_str(value)?;
                 if value.len() > 2 {
@@ -312,7 +347,7 @@ impl ElfWriteDomain {
         write_content: impl Fn(&mut Self, &mut W, &T) -> Result<()>,
     ) -> Result<()> {
         let mut links_size: usize = 0;
-        let token = ctx.allocate_next_block_aligned(4, |ctx| {
+        let token = ctx.allocate_next_block_aligned(None, 4, |ctx| {
             let start_pos = ctx.position()? as usize;
             for value in values {
                 write_content(self, ctx, value)?;
@@ -339,7 +374,7 @@ impl ElfWriteDomain {
         write_content: impl Fn(&mut Self, &mut W, &T) -> Result<()>,
     ) -> Result<()> {
         let mut links_size: usize = 0;
-        let token = ctx.allocate_next_block_aligned(4, |ctx| {
+        let token = ctx.allocate_next_block_aligned(None, 4, |ctx| {
             let start_pos = ctx.position()? as usize;
             for value in values {
                 write_content(self, ctx, value)?;
@@ -396,7 +431,7 @@ impl ElfWriteDomain {
     }
 }
 
-impl WriteDomain for ElfWriteDomain {
+impl<C: ElfCategory> WriteDomain for ElfWriteDomain<C> {
     type Pointer = Pointer;
     type Cat = ();
 
@@ -429,7 +464,7 @@ impl WriteDomain for ElfWriteDomain {
     }
 }
 
-impl CanWriteSlice for ElfWriteDomain {
+impl<C: ElfCategory> CanWriteSlice for ElfWriteDomain<C> {
     fn write_slice_of<T: 'static, W: WriteCtx>(
         &mut self,
         ctx: &mut W,
@@ -440,7 +475,7 @@ impl CanWriteSlice for ElfWriteDomain {
     }
 }
 
-impl<T: 'static> CanWriteSliceWithArgs<T, Option<SymbolName>> for ElfWriteDomain {
+impl<C: ElfCategory, T: 'static> CanWriteSliceWithArgs<T, Option<SymbolName>> for ElfWriteDomain<C> {
     fn write_slice_args_of<W: WriteCtx>(
         &mut self,
         ctx: &mut W,
@@ -452,7 +487,7 @@ impl<T: 'static> CanWriteSliceWithArgs<T, Option<SymbolName>> for ElfWriteDomain
     }
 }
 
-impl<T: Default + 'static> CanWriteSliceWithArgs<T, WriteNullTermiantedSliceArgs> for ElfWriteDomain {
+impl<C: ElfCategory, T: Default + 'static> CanWriteSliceWithArgs<T, WriteNullTermiantedSliceArgs> for ElfWriteDomain<C> {
     fn write_slice_args_of<W: WriteCtx>(
         &mut self,
         ctx: &mut W,
@@ -464,19 +499,19 @@ impl<T: Default + 'static> CanWriteSliceWithArgs<T, WriteNullTermiantedSliceArgs
     }
 }
 
-impl CanWrite<String> for ElfWriteDomain {
+impl<C: ElfCategory> CanWrite<String> for ElfWriteDomain<C> {
     fn write(&mut self, ctx: &mut impl WriteCtx, value: &String) -> Result<()> {
         self.write_string(ctx, value, WriteStringArgs::default())
     }
 }
 
-impl CanWrite<Option<String>> for ElfWriteDomain {
+impl<C: ElfCategory> CanWrite<Option<String>> for ElfWriteDomain<C> {
     fn write(&mut self, ctx: &mut impl WriteCtx, value: &Option<String>) -> Result<()> {
         self.write_string_optional(ctx, value.as_deref(), WriteStringArgs::default())
     }
 }
 
-impl CanWriteWithArgs<String, WriteStringArgs> for ElfWriteDomain {
+impl<C: ElfCategory> CanWriteWithArgs<String, WriteStringArgs> for ElfWriteDomain<C> {
     fn write_args(&mut self, ctx: &mut impl WriteCtx, value: &String, args: WriteStringArgs) -> Result<()> {
         self.write_string(ctx, value, args)
     }

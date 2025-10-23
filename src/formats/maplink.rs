@@ -10,7 +10,7 @@ use vivibin::{
 
 use crate::{
     SymbolName,
-    binutil::{ElfReadDomain, ElfWriteDomain, WriteStringArgs},
+    binutil::{ElfCategory, ElfReadDomain, ElfWriteDomain, WriteStringArgs},
     formats::FileData,
 };
 
@@ -29,7 +29,7 @@ pub fn read_maplink(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<F
     Ok(FileData::Maplink(areas))
 }
 
-pub fn write_maplink(ctx: &mut impl WriteCtx, domain: &mut ElfWriteDomain, areas: &[MaplinkArea]) -> Result<()> {
+pub fn write_maplink<C: ElfCategory>(ctx: &mut impl WriteCtx, domain: &mut ElfWriteDomain<C>, areas: &[MaplinkArea]) -> Result<()> {
     domain.write_symbol(ctx, "dataCount__Q3_4data3fld7maplink", |domain, ctx| {
         domain.write_fallback::<u32>(ctx, &(areas.len() as u32))
     })?;

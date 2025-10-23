@@ -4,12 +4,13 @@ use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
-    scoped_reader_pos, CanRead, CanWrite, CanWriteSliceWithArgs, Readable, Reader, Writable, WriteCtx, WriteDomainExt, WriteSliceWithArgsFallbackExt
+    CanRead, CanWrite, CanWriteSliceWithArgs, Readable, Reader, Writable, WriteCtx, WriteDomainExt,
+    WriteSliceWithArgsFallbackExt, scoped_reader_pos,
 };
 
 use crate::{
     SymbolName,
-    binutil::{ElfReadDomain, ElfWriteDomain, WriteNullTermiantedSliceArgs},
+    binutil::{ElfCategory, ElfReadDomain, ElfWriteDomain, WriteNullTermiantedSliceArgs},
     formats::FileData,
     util::pointer::Pointer,
 };
@@ -29,7 +30,7 @@ pub fn read_shops(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<Fil
     Ok(FileData::Shop(shop_list))
 }
 
-pub fn write_shops(ctx: &mut impl WriteCtx, domain: &mut ElfWriteDomain, shops: &[Shop]) -> Result<()> {
+pub fn write_shops<C: ElfCategory>(ctx: &mut impl WriteCtx, domain: &mut ElfWriteDomain<C>, shops: &[Shop]) -> Result<()> {
     domain.write_symbol(ctx, "shopList__Q2_4data4shop", |domain, ctx| {
         for shop in shops {
             shop.to_writer(ctx, domain)?;

@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 use vivibin::{HeapToken, WriteCtxImpl, WriteDomainExt, util::HashMap};
 
 use crate::{
-    binutil::ElfWriteDomain,
+    binutil::{ElfCategory, ElfWriteDomain},
     elf::{
         Relocation, Section, Symbol, SymbolHeader, SymbolNameGenerator,
         container::{ELF_HEADER_IDENT, ElfContainer, ElfHeader},
@@ -79,12 +79,12 @@ pub struct RelDeclaration {
     pub target_location: usize,
 }
 
-pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) -> Result<ElfContainer> {
+pub fn reassemble_elf_container<C: ElfCategory>(data: &FileData, apply_debug_relocations: bool) -> Result<ElfContainer> {
     let mut block_offsets = Vec::new();
     let mut domain = ElfWriteDomain::new(data.string_dedup_size(), apply_debug_relocations);
     
     // serialize data
-    let mut ctx: WriteCtxImpl<ElfWriteDomain> = ElfWriteDomain::new_ctx();
+    let mut ctx: WriteCtxImpl<ElfWriteDomain<C>> = ElfWriteDomain::new_ctx();
     match data {
         FileData::Maplink(maplink_areas) => {
             write_maplink(&mut ctx, &mut domain, maplink_areas)?;
