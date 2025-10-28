@@ -350,7 +350,7 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
     
     pub fn write_box<W: WriteCtx>(
         &mut self, ctx: &mut W, args: Option<SymbolName>,
-        write_content: impl FnOnce(&mut Self, &mut W) -> Result<()>,
+        write_content: impl FnOnce(&mut Self, &mut W::InnerCtx<'_>) -> Result<()>,
     ) -> Result<()> {
         let mut links_size: usize = 0;
         let token = ctx.allocate_next_block_aligned(None, 4, |ctx| {
@@ -374,7 +374,7 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
     
     pub fn write_slice<T: 'static, W: WriteCtx<Cat = C>>(
         &mut self, ctx: &mut W, values: &[T], args: Option<SymbolName>,
-        write_content: impl Fn(&mut Self, &mut W, &T) -> Result<()>,
+        write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<()>,
     ) -> Result<()> {
         let mut links_size: usize = 0;
         let token = ctx.allocate_next_block_aligned(None, 4, |ctx| {
@@ -401,7 +401,7 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
     
     pub fn write_null_terminated_slice<T: Default + 'static, W: WriteCtx>(
         &mut self, ctx: &mut W, values: &[T], args: WriteNullTermiantedSliceArgs,
-        write_content: impl Fn(&mut Self, &mut W, &T) -> Result<()>,
+        write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<()>,
     ) -> Result<()> {
         let mut links_size: usize = 0;
         let token = ctx.allocate_next_block_aligned(None, 4, |ctx| {
@@ -500,7 +500,7 @@ impl<C: ElfCategory> CanWriteBox for ElfWriteDomain<C> {
     fn write_box_of<W: WriteCtx>(
         &mut self,
         ctx: &mut W,
-        write_content: impl FnOnce(&mut Self, &mut W) -> Result<()>
+        write_content: impl FnOnce(&mut Self, &mut W::InnerCtx<'_>) -> Result<()>
     ) -> Result<()> {
         // hardcoding 'l' to make lct work is quite a hack
         self.write_box(ctx, Some(SymbolName::Internal('l')), write_content)
@@ -514,7 +514,7 @@ impl<C: ElfCategory> CanWriteSlice for ElfWriteDomain<C> {
         &mut self,
         ctx: &mut W,
         values: &[T],
-        write_content: impl Fn(&mut Self, &mut W, &T) -> Result<()>,
+        write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<()>,
     ) -> Result<()> {
         self.write_slice(ctx, values, None, write_content)
     }
@@ -526,7 +526,7 @@ impl<C: ElfCategory, T: 'static> CanWriteSliceWithArgs<T, Option<SymbolName>> fo
         ctx: &mut W,
         values: &[T],
         args: Option<SymbolName>,
-        write_content: impl Fn(&mut Self, &mut W, &T) -> Result<()>,
+        write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<()>,
     ) -> Result<()> {
         self.write_slice(ctx, values, args, write_content)
     }
@@ -538,7 +538,7 @@ impl<C: ElfCategory, T: Default + 'static> CanWriteSliceWithArgs<T, WriteNullTer
         ctx: &mut W,
         values: &[T],
         args: WriteNullTermiantedSliceArgs,
-        write_content: impl Fn(&mut Self, &mut W, &T) -> Result<()>,
+        write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<()>,
     ) -> Result<()> {
         self.write_null_terminated_slice(ctx, values, args, write_content)
     }
