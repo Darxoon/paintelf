@@ -84,6 +84,7 @@ where
         domain.write(ctx, &self.shop_id)?;
         domain.write_slice_args_fallback(ctx, &self.items, WriteNullTermiantedSliceArgs {
             symbol_name: Some(SymbolName::Internal('s')),
+            write_length: false,
         })?;
         Ok(())
     }

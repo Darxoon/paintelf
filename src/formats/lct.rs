@@ -4,12 +4,12 @@ use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
-    CanWrite, CanWriteBox, Readable, Reader, Writable, WriteBoxFallbackExt, WriteCtx,
-    WriteDomainExt,
+    CanWrite, CanWriteBox, CanWriteSlice, CanWriteSliceWithArgs, Readable, Reader, Writable,
+    WriteCtx, WriteDomainExt, WriteSliceFallbackExt, WriteSliceWithArgsFallbackExt,
 };
 
 use crate::{
-    binutil::{ElfCategory, ElfReadDomain, ElfWriteDomain},
+    binutil::{ElfCategory, ElfReadDomain, ElfWriteDomain, WriteNullTermiantedSliceArgs},
     formats::FileData,
 };
 
@@ -52,11 +52,16 @@ pub struct AreaLct {
     pub maps: Vec<MapLct>,
 }
 
-impl<D: CanWrite<String> + CanWriteBox> Writable<D> for AreaLct {
+impl<D> Writable<D> for AreaLct
+where
+    D: CanWrite<String> + CanWriteBox + CanWriteSlice + CanWriteSliceWithArgs<MapLct, WriteNullTermiantedSliceArgs>,
+{
     fn to_writer_unboxed(&self, ctx: &mut impl WriteCtx<Cat = D::Cat>, domain: &mut D) -> Result<()> {
         domain.write(ctx, &self.area_id)?;
-        domain.write_box_fallback(ctx, &0u32)?;
-        domain.write_fallback(ctx, &(self.maps.len() as u32))?;
+        domain.write_slice_args_fallback(ctx, &self.maps, WriteNullTermiantedSliceArgs {
+            symbol_name: None,
+            write_length: true,
+        })?;
         Ok(())
     }
     
@@ -67,7 +72,7 @@ impl<D: CanWrite<String> + CanWriteBox> Writable<D> for AreaLct {
     }
 }
 
-#[derive(Clone, Debug, Readable, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Readable, Deserialize, Serialize)]
 #[boxed]
 pub struct MapLct {
     #[require_domain]
@@ -75,7 +80,26 @@ pub struct MapLct {
     pub lcts: Vec<Lct>,
 }
 
-#[derive(Clone, Debug, Readable, Deserialize, Serialize)]
+impl<D: CanWrite<String> + CanWriteBox + CanWriteSlice> Writable<D> for MapLct {
+    fn to_writer_unboxed(&self, ctx: &mut impl WriteCtx<Cat = D::Cat>, domain: &mut D) -> Result<()> {
+        domain.write(ctx, &self.map_id)?;
+        domain.write_slice_fallback(ctx, &self.lcts)?;
+        Ok(())
+    }
+    
+    fn to_writer(&self, ctx: &mut impl WriteCtx<Cat = D::Cat>, domain: &mut D) -> Result<()> {
+        // TODO: WriteNullTermiantedSliceArgs does not interact well with boxing
+        if self.map_id.is_empty() && self.lcts.is_empty() {
+            domain.write_fallback(ctx, &0u32)
+        } else {
+            domain.write_box_of(ctx, |domain, ctx| {
+                self.to_writer_unboxed(ctx, domain)
+            })
+        }
+    }
+}
+
+#[derive(Clone, Debug, Readable, Writable, Deserialize, Serialize)]
 pub struct Lct {
     #[require_domain]
     pub id: String,

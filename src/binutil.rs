@@ -251,9 +251,10 @@ impl Default for WriteStringArgs {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct WriteNullTermiantedSliceArgs {
     pub symbol_name: Option<SymbolName>,
+    pub write_length: bool,
 }
 
 #[derive(Clone)]
@@ -393,7 +394,7 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
         Ok(())
     }
     
-    pub fn write_null_terminated_slice<T: Default + 'static, W: WriteCtx>(
+    pub fn write_null_terminated_slice<T: Default + 'static, W: WriteCtx<Cat = C>>(
         &mut self, ctx: &mut W, values: &[T], args: WriteNullTermiantedSliceArgs,
         write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<()>,
     ) -> Result<()> {
@@ -409,6 +410,9 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
         })?;
         
         ctx.write_token::<4>(token)?;
+        if args.write_length {
+            self.write_fallback(ctx, &(values.len() as u32))?;
+        }
         
         if let Some(name) = args.symbol_name {
             self.put_symbol(SymbolDeclaration {
@@ -527,7 +531,7 @@ impl<C: ElfCategory, T: 'static> CanWriteSliceWithArgs<T, Option<SymbolName>> fo
 }
 
 impl<C: ElfCategory, T: Default + 'static> CanWriteSliceWithArgs<T, WriteNullTermiantedSliceArgs> for ElfWriteDomain<C> {
-    fn write_slice_args_of<W: WriteCtx>(
+    fn write_slice_args_of<W: WriteCtx<Cat = C>>(
         &mut self,
         ctx: &mut W,
         values: &[T],
