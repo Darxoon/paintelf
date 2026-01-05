@@ -1,6 +1,7 @@
 use core::{
     cmp::Ordering,
     fmt::{self, Display},
+    mem,
 };
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
@@ -8,7 +9,7 @@ use anyhow::{Result, anyhow};
 use binrw::BinWrite;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
-use vivibin::{HeapToken, WriteCtx, WriteCtxImpl, WriteDomainExt, util::HashMap};
+use vivibin::{HeapResolver, HeapToken, WriteCtx, WriteCtxImpl, WriteDomainExt, util::HashMap};
 
 use crate::{
     binutil::{DataCategory, ElfCategoryType, ElfWriteDomain, UnitCategory},
@@ -85,8 +86,8 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
     let mut block_offsets = Vec::new();
     
     // serialize data
-    let mut data_buffer =  None;
-    let mut rodata_buffer =  None;
+    let data_buffer: Option<Vec<u8>>;
+    let rodata_buffer: Option<Vec<u8>>;
     
     let (mut symbol_declarations, mut relocations) = match data.heap_category_type() {
         ElfCategoryType::Unit => {
@@ -107,6 +108,7 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
                 _ => panic!("Type {data:?} does not use heap category Unit"),
             };
             
+            data_buffer = None;
             rodata_buffer = Some(ctx.to_buffer(&mut domain, Some(&mut block_offsets))?);
             (domain.symbol_declarations, domain.relocations)
         },
@@ -120,18 +122,27 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
                 _ => panic!("Type {data:?} does not use heap category Data"),
             };
             
+            let mut resolver = HeapResolver::default();
+            
+            let data_id = ctx.heap_id_of(DataCategory::Data);
+            let rodata_id = ctx.heap_id_of(DataCategory::Rodata);
+            
             let data_heap = ctx.heap(&DataCategory::Data);
             if let Some(data_heap) = data_heap {
-                data_buffer = Some(data_heap.to_buffer(&mut domain, Some(&mut block_offsets))?);
+                resolver.write_heap(&mut domain, data_id, data_heap)?;
             }
             
             let rodata_heap = ctx.heap(&DataCategory::Rodata);
             if let Some(rodata_heap) = rodata_heap {
-                rodata_buffer = Some(rodata_heap.to_buffer(&mut domain, Some(&mut block_offsets))?);
+                resolver.write_heap(&mut domain, rodata_id, rodata_heap)?;
             }
             
+            data_buffer = Some(mem::take(&mut *resolver.output_buffers[&data_id].borrow_mut()).into_inner());
+            rodata_buffer = Some(mem::take(&mut *resolver.output_buffers[&rodata_id].borrow_mut()).into_inner());
+            block_offsets = resolver.block_offsets;
+            
             (domain.symbol_declarations, domain.relocations)
-        }
+        },
     };
     
     // serialize elf metadata
@@ -192,11 +203,11 @@ pub fn write_relocations(
     let mut writer = Cursor::new(Vec::new());
     
     for relocation in relocations {
-        let symbol_idx = symbol_indices.get(&relocation.target_location)
-            .ok_or_else(|| anyhow!(
-                "No symbol at offset 0x{:x} (pointed at from 0x{:x})",
-                relocation.target_location, relocation.base_location,
-            ))?;
+        let Some(symbol_idx) = symbol_indices.get(&relocation.target_location) else {
+            eprintln!("WARNING: No symbol at offset 0x{:x} (pointed at from 0x{:x})",
+                relocation.target_location, relocation.base_location);
+            continue;
+        };
         
         let raw = Relocation::new(relocation.base_location as u32, (symbol_idx << 8 | 1) as u32, 0);
         raw.write(&mut writer)?;

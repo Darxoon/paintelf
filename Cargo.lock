@@ -262,6 +262,7 @@ dependencies = [
  "anyhow",
  "array-init",
  "byteorder",
+ "indexmap",
  "vivibin_derive",
 ]
 

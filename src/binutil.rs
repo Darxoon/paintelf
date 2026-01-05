@@ -306,45 +306,39 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
             None
         };
         
-        let token = if let Some(token) = existing_token {
-            token
-        } else {
-            let alignment = if self.prev_string_len <= 2 && value.len() <= 1 {
-                0
-            } else {
-                4
-            };
-            
-            // TODO: this is a hack
-            if args.deduplicate {
-                self.prev_string_len = value.len();
-            }
-            
-            let mut name_size: usize = 0;
-            let new_token = ctx.allocate_next_block_aligned(Some(C::string()), alignment, |ctx| {
-                let start_pos = ctx.position()? as usize;
-                ctx.write_c_str(value)?;
-                if value.len() > 2 {
-                    ctx.align_to(4)?;
-                }
-                name_size = ctx.position()? as usize - start_pos;
-                Ok(())
-            })?;
-            
-            self.put_symbol(SymbolDeclaration {
-                name: SymbolName::Internal('.'),
-                offset: new_token,
-                size: name_size as u32,
-            });
-            
-            if args.deduplicate {
-                self.string_map.insert(value.to_string(), new_token);
-            }
-            
-            new_token
-        };
+        if let Some(token) = existing_token {
+            ctx.write_token::<4>(token)?;
+            return Ok(());
+        }
         
-        ctx.write_token::<4>(token)?;
+        let alignment = (self.prev_string_len > 2 || value.len() > 1).then_some(4).unwrap_or_default();
+        
+        if args.deduplicate {
+            self.prev_string_len = value.len();
+        }
+        
+        let mut name_size: usize = 0;
+        let new_token = ctx.allocate_next_block_aligned(Some(C::string()), alignment, |ctx| {
+            let start_pos = ctx.position()? as usize;
+            ctx.write_c_str(value)?;
+            if value.len() > 2 {
+                ctx.align_to(4)?;
+            }
+            name_size = ctx.position()? as usize - start_pos;
+            Ok(())
+        })?;
+        
+        self.put_symbol(SymbolDeclaration {
+            name: SymbolName::Internal('.'),
+            offset: new_token,
+            size: name_size as u32,
+        });
+        
+        if args.deduplicate {
+            self.string_map.insert(value.to_string(), new_token);
+        }
+        
+        ctx.write_token::<4>(new_token)?;
         Ok(())
     }
     
