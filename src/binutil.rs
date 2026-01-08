@@ -1,8 +1,3 @@
-use core::{
-    any::TypeId,
-    mem::{self, ManuallyDrop},
-    ptr,
-};
 use std::{fmt::Debug, io::SeekFrom, marker::PhantomData};
 
 use anyhow::{Result, anyhow, bail, ensure};
@@ -10,8 +5,8 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use vivibin::{
     CanRead, CanReadVec, CanWrite, CanWriteBox, CanWriteSlice, CanWriteSliceWithArgs,
-    CanWriteWithArgs, EndianSpecific, Endianness, HeapCategory, HeapToken, ReadDomain,
-    ReadDomainExt, Reader, WriteCtx, WriteDomain, WriteDomainExt, Writer, util::HashMap,
+    CanWriteWithArgs, EndianSpecific, Endianness, HeapCategory, HeapToken, ReadDomain, Readable,
+    Reader, Writable, WriteCtx, WriteDomain, Writer, util::HashMap,
 };
 
 use crate::{
@@ -75,7 +70,7 @@ impl<'a> ElfReadDomain<'a> {
     
     pub fn read_vec<T: 'static, R: Reader>(self, reader: &mut R, read_content: impl Fn(&mut R) -> Result<T>) -> Result<Vec<T>> {
         let ptr: Option<Pointer> = self.read_pointer_optional(reader)?;
-        let count: u32 = self.read_fallback(reader)?;
+        let count: u32 = u32::from_reader(reader, self)?;
         
         let Some(ptr) = ptr else {
             return Ok(Vec::new());
@@ -130,35 +125,8 @@ impl EndianSpecific for ElfReadDomain<'_> {
     }
 }
 
-// this should be a macro :/
 impl ReadDomain for ElfReadDomain<'_> {
     type Pointer = Pointer;
-
-    fn read_unk<T: 'static>(self, reader: &mut impl vivibin::Reader) -> Result<Option<T>> {
-        let type_id = TypeId::of::<T>();
-        
-        let result: Option<T> = if type_id == TypeId::of::<Pointer>() {
-            let value = ManuallyDrop::new(self.read_pointer(reader)?);
-            
-            Some(unsafe { ptr::read(mem::transmute::<&Pointer, &T>(&value)) })
-        } else if type_id == TypeId::of::<Option<Pointer>>() {
-            let value = ManuallyDrop::new(self.read_pointer_optional(reader)?);
-            
-            Some(unsafe { ptr::read(mem::transmute::<&Option<Pointer>, &T>(&value)) })
-        } else if type_id == TypeId::of::<String>() {
-            let value = ManuallyDrop::new(self.read_string(reader)?);
-            
-            Some(unsafe { ptr::read(mem::transmute::<&String, &T>(&value)) })
-        } else if type_id == TypeId::of::<Option<String>>() {
-            let value = ManuallyDrop::new(self.read_string_optional(reader)?);
-            
-            Some(unsafe { ptr::read(mem::transmute::<&Option<String>, &T>(&value)) })
-        } else {
-            None
-        };
-        
-        Ok(result)
-    }
 
     fn read_box_nullable<T, R: Reader>(self, reader: &mut R, read_content: impl FnOnce(&mut R) -> Result<T>) -> Result<Option<T>> {
         let Some(ptr) = self.read_pointer_optional(reader)? else {
@@ -289,16 +257,16 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
         }
     }
     
-    pub fn write_string_optional(&mut self, ctx: &mut impl WriteCtx<Cat = C>, value: Option<&str>, args: WriteStringArgs) -> Result<()> {
+    pub fn write_string_optional(&mut self, ctx: &mut impl WriteCtx<C>, value: Option<&str>, args: WriteStringArgs) -> Result<()> {
         let Some(value) = value else {
-            self.write_fallback::<u32>(ctx, &0)?;
+            0u32.to_writer(ctx, self)?;
             return Ok(());
         };
         
         self.write_string(ctx, value, args)
     }
     
-    pub fn write_string(&mut self, ctx: &mut impl WriteCtx<Cat = C>, value: &str, args: WriteStringArgs) -> Result<()> {
+    pub fn write_string(&mut self, ctx: &mut impl WriteCtx<C>, value: &str, args: WriteStringArgs) -> Result<()> {
         // Search for if this string has already been written before
         // TODO: account for substrings (use crate memchr?)
         let existing_token = if args.deduplicate && ctx.position()? < self.string_dedup_size { 
@@ -343,7 +311,7 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
         Ok(())
     }
     
-    pub fn write_box<W: WriteCtx>(
+    pub fn write_box<W: WriteCtx<C>>(
         &mut self, ctx: &mut W, args: Option<SymbolName>,
         write_content: impl FnOnce(&mut Self, &mut W::InnerCtx<'_>) -> Result<()>,
     ) -> Result<()> {
@@ -367,7 +335,7 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
         Ok(())
     }
     
-    pub fn write_slice<T: 'static, W: WriteCtx<Cat = C>>(
+    pub fn write_slice<T: 'static, W: WriteCtx<C>>(
         &mut self, ctx: &mut W, values: &[T], args: Option<SymbolName>,
         write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<()>,
     ) -> Result<()> {
@@ -382,7 +350,7 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
         })?;
         
         ctx.write_token::<4>(token)?;
-        self.write_fallback(ctx, &(values.len() as u32))?;
+        (values.len() as u32).to_writer(ctx, self)?;
         
         if let Some(name) = args {
             self.put_symbol(SymbolDeclaration {
@@ -394,7 +362,7 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
         Ok(())
     }
     
-    pub fn write_null_terminated_slice<T: Default + 'static, W: WriteCtx<Cat = C>>(
+    pub fn write_null_terminated_slice<T: Default + 'static, W: WriteCtx<C>>(
         &mut self, ctx: &mut W, values: &[T], args: WriteNullTermiantedSliceArgs,
         write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<()>,
     ) -> Result<()> {
@@ -411,7 +379,7 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
         
         ctx.write_token::<4>(token)?;
         if args.write_length {
-            self.write_fallback(ctx, &(values.len() as u32))?;
+            (values.len() as u32).to_writer(ctx, self)?;
         }
         
         if let Some(name) = args.symbol_name {
@@ -424,7 +392,7 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
         Ok(())
     }
     
-    pub fn write_symbol<W: WriteCtx>(
+    pub fn write_symbol<W: WriteCtx<C>>(
         &mut self,
         ctx: &mut W,
         symbol_name: impl Into<String>,
@@ -463,24 +431,6 @@ impl<C: ElfCategory> WriteDomain for ElfWriteDomain<C> {
     type Pointer = Pointer;
     type Cat = C;
 
-    fn write_unk<T: 'static>(&mut self, _ctx: &mut impl WriteCtx, _value: &T) -> Result<Option<()>> {
-        // TODO: make this work again
-        // let type_id = TypeId::of::<T>();
-        
-        // if type_id == TypeId::of::<String>() {
-        //     let value = unsafe { transmute::<&T, &String>(value) };
-        //     self.write_string(ctx, value, WriteStringArgs::default())?;
-        //     Ok(Some(()))
-        // } else if type_id == TypeId::of::<Option<String>>() {
-        //     let value = unsafe { transmute::<&T, &Option<String>>(value) };
-        //     self.write_string_optional(ctx, value.as_deref(), WriteStringArgs::default())?;
-        //     Ok(Some(()))
-        // } else {
-        //     Ok(None)
-        // }
-        Ok(None)
-    }
-
     fn apply_reference(&mut self, writer: &mut impl Writer, heap_offset: usize) -> Result<()> {
         self.put_relocation(RelDeclaration {
             base_location: writer.position()? as usize,
@@ -494,8 +444,8 @@ impl<C: ElfCategory> WriteDomain for ElfWriteDomain<C> {
     }
 }
 
-impl<C: ElfCategory> CanWriteBox for ElfWriteDomain<C> {
-    fn write_box_of<W: WriteCtx>(
+impl<C: ElfCategory> CanWriteBox<C> for ElfWriteDomain<C> {
+    fn write_box_of<W: WriteCtx<C>>(
         &mut self,
         ctx: &mut W,
         write_content: impl FnOnce(&mut Self, &mut W::InnerCtx<'_>) -> Result<()>
@@ -507,8 +457,8 @@ impl<C: ElfCategory> CanWriteBox for ElfWriteDomain<C> {
 
 // TODO: box with args
 
-impl<C: ElfCategory> CanWriteSlice for ElfWriteDomain<C> {
-    fn write_slice_of<T: 'static, W: WriteCtx<Cat = C>>(
+impl<C: ElfCategory> CanWriteSlice<C> for ElfWriteDomain<C> {
+    fn write_slice_of<T: 'static, W: WriteCtx<C>>(
         &mut self,
         ctx: &mut W,
         values: &[T],
@@ -518,8 +468,8 @@ impl<C: ElfCategory> CanWriteSlice for ElfWriteDomain<C> {
     }
 }
 
-impl<C: ElfCategory, T: 'static> CanWriteSliceWithArgs<T, Option<SymbolName>> for ElfWriteDomain<C> {
-    fn write_slice_args_of<W: WriteCtx<Cat = C>>(
+impl<C: ElfCategory, T: 'static> CanWriteSliceWithArgs<C, T, Option<SymbolName>> for ElfWriteDomain<C> {
+    fn write_slice_args_of<W: WriteCtx<C>>(
         &mut self,
         ctx: &mut W,
         values: &[T],
@@ -530,8 +480,8 @@ impl<C: ElfCategory, T: 'static> CanWriteSliceWithArgs<T, Option<SymbolName>> fo
     }
 }
 
-impl<C: ElfCategory, T: Default + 'static> CanWriteSliceWithArgs<T, WriteNullTermiantedSliceArgs> for ElfWriteDomain<C> {
-    fn write_slice_args_of<W: WriteCtx<Cat = C>>(
+impl<C: ElfCategory, T: Default + 'static> CanWriteSliceWithArgs<C, T, WriteNullTermiantedSliceArgs> for ElfWriteDomain<C> {
+    fn write_slice_args_of<W: WriteCtx<C>>(
         &mut self,
         ctx: &mut W,
         values: &[T],
@@ -542,20 +492,20 @@ impl<C: ElfCategory, T: Default + 'static> CanWriteSliceWithArgs<T, WriteNullTer
     }
 }
 
-impl<C: ElfCategory> CanWrite<String> for ElfWriteDomain<C> {
-    fn write(&mut self, ctx: &mut impl WriteCtx<Cat = C>, value: &String) -> Result<()> {
+impl<C: ElfCategory> CanWrite<C, String> for ElfWriteDomain<C> {
+    fn write(&mut self, ctx: &mut impl WriteCtx<C>, value: &String) -> Result<()> {
         self.write_string(ctx, value, WriteStringArgs::default())
     }
 }
 
-impl<C: ElfCategory> CanWrite<Option<String>> for ElfWriteDomain<C> {
-    fn write(&mut self, ctx: &mut impl WriteCtx<Cat = C>, value: &Option<String>) -> Result<()> {
+impl<C: ElfCategory> CanWrite<C, Option<String>> for ElfWriteDomain<C> {
+    fn write(&mut self, ctx: &mut impl WriteCtx<C>, value: &Option<String>) -> Result<()> {
         self.write_string_optional(ctx, value.as_deref(), WriteStringArgs::default())
     }
 }
 
-impl<C: ElfCategory> CanWriteWithArgs<String, WriteStringArgs> for ElfWriteDomain<C> {
-    fn write_args(&mut self, ctx: &mut impl WriteCtx<Cat = C>, value: &String, args: WriteStringArgs) -> Result<()> {
+impl<C: ElfCategory> CanWriteWithArgs<C, String, WriteStringArgs> for ElfWriteDomain<C> {
+    fn write_args(&mut self, ctx: &mut impl WriteCtx<C>, value: &String, args: WriteStringArgs) -> Result<()> {
         self.write_string(ctx, value, args)
     }
 }

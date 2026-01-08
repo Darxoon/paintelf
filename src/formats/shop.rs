@@ -4,7 +4,7 @@ use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
-    CanRead, CanWrite, CanWriteSliceWithArgs, Readable, Reader, Writable, WriteCtx, WriteDomainExt,
+    CanRead, CanWrite, CanWriteSliceWithArgs, HeapCategory, Readable, Reader, Writable, WriteCtx,
     WriteSliceWithArgsFallbackExt, scoped_reader_pos,
 };
 
@@ -30,7 +30,7 @@ pub fn read_shops(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<Fil
     Ok(FileData::Shop(shop_list))
 }
 
-pub fn write_shops<C: ElfCategory>(ctx: &mut impl WriteCtx<Cat = C>, domain: &mut ElfWriteDomain<C>, shops: &[Shop]) -> Result<()> {
+pub fn write_shops<C: ElfCategory>(ctx: &mut impl WriteCtx<C>, domain: &mut ElfWriteDomain<C>, shops: &[Shop]) -> Result<()> {
     domain.write_symbol(ctx, "shopList__Q2_4data4shop", |domain, ctx| {
         for shop in shops {
             shop.to_writer(ctx, domain)?;
@@ -39,7 +39,7 @@ pub fn write_shops<C: ElfCategory>(ctx: &mut impl WriteCtx<Cat = C>, domain: &mu
     })?;
     
     domain.write_symbol(ctx, "shopListLen__Q2_4data4shop", |domain, ctx| {
-        domain.write_fallback::<u32>(ctx, &(shops.len() as u32))
+        (shops.len() as u32).to_writer(ctx, domain)
     })?;
     Ok(())
 }
@@ -74,13 +74,14 @@ impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer>> Readable<D
     }
 }
 
-impl<D> Writable<D> for Shop
+impl<C, D> Writable<C, D> for Shop
 where
-    D: CanWrite<String>
-        + CanWrite<Option<String>>
-        + CanWriteSliceWithArgs<SoldItem, WriteNullTermiantedSliceArgs>,
+    C: HeapCategory,
+    D: CanWrite<C, String>
+        + CanWrite<C, Option<String>>
+        + CanWriteSliceWithArgs<C, SoldItem, WriteNullTermiantedSliceArgs>,
 {
-    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<Cat = D::Cat>, domain: &mut D) -> Result<()> {
+    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<C>, domain: &mut D) -> Result<()> {
         domain.write(ctx, &self.shop_id)?;
         domain.write_slice_args_fallback(ctx, &self.items, WriteNullTermiantedSliceArgs {
             symbol_name: Some(SymbolName::Internal('s')),
