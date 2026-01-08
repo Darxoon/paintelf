@@ -83,7 +83,7 @@ pub struct RelDeclaration {
 }
 
 pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) -> Result<ElfContainer> {
-    let mut block_offsets = Vec::new();
+    let block_offsets;
     
     // serialize data
     let data_buffer: Option<Vec<u8>>;
@@ -108,8 +108,19 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
                 _ => panic!("Type {data:?} does not use heap category Unit"),
             };
             
+            let mut resolver = HeapResolver::default();
+            
+            let heap_id = ctx.heap_id_of(UnitCategory);
+            let heap = ctx.heap(&UnitCategory);
+            
+            if let Some(heap) = heap {
+                resolver.write_heap(&mut domain, heap_id, heap)?;
+            }
+            
             data_buffer = None;
-            rodata_buffer = Some(ctx.to_buffer(&mut domain, Some(&mut block_offsets))?);
+            rodata_buffer = Some(mem::take(&mut *resolver.output_buffers[&heap_id].borrow_mut()).into_inner());
+            block_offsets = resolver.block_offsets;
+            
             (domain.symbol_declarations, domain.relocations)
         },
         ElfCategoryType::Data => {
@@ -137,6 +148,7 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
                 resolver.write_heap(&mut domain, rodata_id, rodata_heap)?;
             }
             
+            // TODO: improve API of this
             data_buffer = Some(mem::take(&mut *resolver.output_buffers[&data_id].borrow_mut()).into_inner());
             rodata_buffer = Some(mem::take(&mut *resolver.output_buffers[&rodata_id].borrow_mut()).into_inner());
             block_offsets = resolver.block_offsets;
