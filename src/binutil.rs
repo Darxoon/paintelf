@@ -469,6 +469,8 @@ impl<C: ElfCategory> CanWriteSlice<C> for ElfWriteDomain<C> {
 }
 
 impl<C: ElfCategory, T: 'static> CanWriteSliceWithArgs<C, T, Option<SymbolName>> for ElfWriteDomain<C> {
+    type PostState = ();
+    
     fn write_slice_args_of<W: WriteCtx<C>>(
         &mut self,
         ctx: &mut W,
@@ -481,6 +483,8 @@ impl<C: ElfCategory, T: 'static> CanWriteSliceWithArgs<C, T, Option<SymbolName>>
 }
 
 impl<C: ElfCategory, T: Default + 'static> CanWriteSliceWithArgs<C, T, WriteNullTermiantedSliceArgs> for ElfWriteDomain<C> {
+    type PostState = ();
+    
     fn write_slice_args_of<W: WriteCtx<C>>(
         &mut self,
         ctx: &mut W,
@@ -505,6 +509,8 @@ impl<C: ElfCategory> CanWrite<C, Option<String>> for ElfWriteDomain<C> {
 }
 
 impl<C: ElfCategory> CanWriteWithArgs<C, String, WriteStringArgs> for ElfWriteDomain<C> {
+    type PostState = ();
+    
     fn write_args(&mut self, ctx: &mut impl WriteCtx<C>, value: &String, args: WriteStringArgs) -> Result<()> {
         self.write_string(ctx, value, args)
     }

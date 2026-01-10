@@ -5,7 +5,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
     CanRead, CanReadVec, CanWrite, CanWriteSliceWithArgs, CanWriteWithArgs, HeapCategory, Readable,
-    Reader, Writable, WriteSliceWithArgsFallbackExt, scoped_reader_pos,
+    Reader, Writable, WriteSliceWithArgsFallbackExt, default_to_writer_impl, scoped_reader_pos,
 };
 
 use crate::{
@@ -87,12 +87,16 @@ where
     C: HeapCategory,
     D: CanWriteWithArgs<C, String, WriteStringArgs> + CanWrite<C, Option<String>> + CanWriteSliceWithArgs<C, Npc, Option<SymbolName>>,
 {
+    type UnboxedPostState = ();
+    
     fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<C>, domain: &mut D) -> Result<()> {
         // TODO: turning off deduplication is a hack, figure out serialization order better
         domain.write_args(ctx, &self.map_id, WriteStringArgs { deduplicate: false })?;
         domain.write_slice_args_fallback(ctx, &self.npcs, Some(SymbolName::InternalNamed(self.map_id.clone())))?;
         Ok(())
     }
+    
+    default_to_writer_impl!(C);
 }
 
 #[derive(Debug, Clone, Readable, Writable, Deserialize, Serialize)]
@@ -195,12 +199,16 @@ where
         + CanWrite<C, Option<String>>
         + CanWriteSliceWithArgs<C, Mobj, Option<SymbolName>>,
 {
+    type UnboxedPostState = ();
+    
     fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<C>, domain: &mut D) -> Result<()> {
         // TODO: turning off deduplication is a hack, figure out serialization order better
         domain.write_args(ctx, &self.map_id, WriteStringArgs { deduplicate: false })?;
         domain.write_slice_args_fallback(ctx, &self.mobjs, Some(SymbolName::InternalNamed(self.map_id.clone())))?;
         Ok(())
     }
+    
+    default_to_writer_impl!(C);
 }
 
 #[derive(Debug, Clone, Readable, Writable, Deserialize, Serialize)]
@@ -251,12 +259,16 @@ where
     D: CanWriteWithArgs<C, String, WriteStringArgs>
         + CanWriteSliceWithArgs<C, Item, Option<SymbolName>>,
 {
+    type UnboxedPostState = ();
+    
     fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<C>, domain: &mut D) -> Result<()> {
         // TODO: turning off deduplication is a hack, figure out serialization order better
         domain.write_args(ctx, &self.map_id, WriteStringArgs { deduplicate: false })?;
         domain.write_slice_args_fallback(ctx, &self.items, Some(SymbolName::InternalNamed(self.map_id.clone())))?;
         Ok(())
     }
+    
+    default_to_writer_impl!(C);
 }
 
 #[derive(Debug, Clone, Readable, Writable, Deserialize, Serialize)]

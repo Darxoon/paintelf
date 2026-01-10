@@ -5,7 +5,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
     CanRead, CanWrite, CanWriteSliceWithArgs, HeapCategory, Readable, Reader, Writable, WriteCtx,
-    WriteSliceWithArgsFallbackExt, scoped_reader_pos,
+    WriteSliceWithArgsFallbackExt, default_to_writer_impl, scoped_reader_pos,
 };
 
 use crate::{
@@ -81,6 +81,8 @@ where
         + CanWrite<C, Option<String>>
         + CanWriteSliceWithArgs<C, SoldItem, WriteNullTermiantedSliceArgs>,
 {
+    type UnboxedPostState = ();
+    
     fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<C>, domain: &mut D) -> Result<()> {
         domain.write(ctx, &self.shop_id)?;
         domain.write_slice_args_fallback(ctx, &self.items, WriteNullTermiantedSliceArgs {
@@ -89,6 +91,8 @@ where
         })?;
         Ok(())
     }
+    
+    default_to_writer_impl!(C);
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Readable, Writable, Deserialize, Serialize)]

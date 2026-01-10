@@ -60,6 +60,9 @@ where
         + CanWriteSlice<C>
         + CanWriteSliceWithArgs<C, MapLct, WriteNullTermiantedSliceArgs>,
 {
+    type UnboxedPostState = ();
+    type PostState = ();
+    
     fn to_writer_unboxed(&self, ctx: &mut impl WriteCtx<C>, domain: &mut D) -> Result<()> {
         domain.write(ctx, &self.area_id)?;
         domain.write_slice_args_fallback(ctx, &self.maps, WriteNullTermiantedSliceArgs {
@@ -74,6 +77,10 @@ where
             self.to_writer_unboxed(ctx, domain)
         })
     }
+    
+    fn to_writer_post(&self, ctx: &mut impl WriteCtx<C>, domain: &mut D, state: Self::PostState) -> Result<()> {
+        self.to_writer_unboxed_post(ctx, domain, state)
+    }
 }
 
 #[derive(Clone, Debug, Default, Readable, Deserialize, Serialize)]
@@ -85,6 +92,9 @@ pub struct MapLct {
 }
 
 impl<C: HeapCategory, D: CanWrite<C, String> + CanWriteBox<C> + CanWriteSlice<C>> Writable<C, D> for MapLct {
+    type UnboxedPostState = ();
+    type PostState = ();
+    
     fn to_writer_unboxed(&self, ctx: &mut impl WriteCtx<C>, domain: &mut D) -> Result<()> {
         domain.write(ctx, &self.map_id)?;
         domain.write_slice_fallback(ctx, &self.lcts)?;
@@ -100,6 +110,10 @@ impl<C: HeapCategory, D: CanWrite<C, String> + CanWriteBox<C> + CanWriteSlice<C>
                 self.to_writer_unboxed(ctx, domain)
             })
         }
+    }
+    
+    fn to_writer_post(&self, ctx: &mut impl WriteCtx<C>, domain: &mut D, state: Self::PostState) -> Result<()> {
+        self.to_writer_unboxed_post(ctx, domain, state)
     }
 }
 
