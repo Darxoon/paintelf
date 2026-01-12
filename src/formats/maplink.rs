@@ -3,14 +3,11 @@ use std::io::SeekFrom;
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
-use vivibin::{
-    CanWriteSliceWithArgs, CanWriteWithArgs, HeapCategory, Readable, Reader, Writable, WriteCtx,
-    WriteSliceWithArgsFallbackExt, default_to_writer_impl,
-};
+use vivibin::{Readable, Reader, Writable, WriteCtx};
 
 use crate::{
     SymbolName,
-    binutil::{ElfCategory, ElfReadDomain, ElfWriteDomain, WriteStringArgs},
+    binutil::{ElfCategory, ElfReadDomain, ElfWriteDomain, WriteSliceArgs, WriteStringArgs},
     formats::FileData,
 };
 
@@ -44,28 +41,16 @@ pub fn write_maplink<C: ElfCategory>(ctx: &mut impl WriteCtx<C>, domain: &mut El
     Ok(())
 }
 
-#[derive(Clone, Debug, Readable, Serialize, Deserialize)]
+#[derive(Clone, Debug, Readable, Writable, Serialize, Deserialize)]
 pub struct MaplinkArea {
     #[require_domain]
+    #[write_args(WriteStringArgs { deduplicate: false })]
     pub map_name: String,
+    
+    #[write_args(WriteSliceArgs {
+        symbol_name: Some(SymbolName::InternalNamed(self.map_name.clone())),
+    })]
     pub links: Vec<Link>,
-}
-
-impl<C, D> Writable<C, D> for MaplinkArea
-where
-    C: HeapCategory,
-    D: CanWriteWithArgs<C, String, WriteStringArgs> + CanWriteSliceWithArgs<C, Link, Option<SymbolName>>,
-{
-    type UnboxedPostState = ();
-    
-    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<C>, domain: &mut D) -> Result<()> {
-        // TODO: turning off deduplication is a hack, figure out serialization order better
-        domain.write_args(ctx, &self.map_name, WriteStringArgs { deduplicate: false })?;
-        domain.write_slice_args_fallback(ctx, &self.links, Some(SymbolName::InternalNamed(self.map_name.clone())))?;
-        Ok(())
-    }
-    
-    default_to_writer_impl!(C);
 }
 
 #[derive(Clone, Debug, Readable, Writable, Serialize, Deserialize)]

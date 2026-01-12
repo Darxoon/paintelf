@@ -220,6 +220,11 @@ impl Default for WriteStringArgs {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct WriteSliceArgs {
+    pub symbol_name: Option<SymbolName>,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct WriteNullTermiantedSliceArgs {
     pub symbol_name: Option<SymbolName>,
     pub write_length: bool,
@@ -336,7 +341,7 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
     }
     
     pub fn write_slice<T: 'static, W: WriteCtx<C>>(
-        &mut self, ctx: &mut W, values: &[T], args: Option<SymbolName>,
+        &mut self, ctx: &mut W, values: &[T], args: WriteSliceArgs,
         write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<()>,
     ) -> Result<()> {
         let mut links_size: usize = 0;
@@ -352,7 +357,7 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
         ctx.write_token::<4>(token)?;
         (values.len() as u32).to_writer(ctx, self)?;
         
-        if let Some(name) = args {
+        if let Some(name) = args.symbol_name {
             self.put_symbol(SymbolDeclaration {
                 name,
                 offset: token,
@@ -464,19 +469,19 @@ impl<C: ElfCategory> CanWriteSlice<C> for ElfWriteDomain<C> {
         values: &[T],
         write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<()>,
     ) -> Result<()> {
-        self.write_slice(ctx, values, None, write_content)?;
+        self.write_slice(ctx, values, WriteSliceArgs::default(), write_content)?;
         Ok(())
     }
 }
 
-impl<C: ElfCategory, T: 'static> CanWriteSliceWithArgs<C, T, Option<SymbolName>> for ElfWriteDomain<C> {
+impl<C: ElfCategory, T: 'static> CanWriteSliceWithArgs<C, T, WriteSliceArgs> for ElfWriteDomain<C> {
     type PostState = ();
     
     fn write_slice_args_of<W: WriteCtx<C>, P>(
         &mut self,
         ctx: &mut W,
         values: &[T],
-        args: Option<SymbolName>,
+        args: WriteSliceArgs,
         write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<P>,
         _write_content_post: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T, P) -> Result<()>,
     ) -> Result<()> {

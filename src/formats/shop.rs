@@ -3,10 +3,7 @@ use std::io::SeekFrom;
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
-use vivibin::{
-    CanRead, CanWrite, CanWriteSliceWithArgs, HeapCategory, Readable, Reader, Writable, WriteCtx,
-    WriteSliceWithArgsFallbackExt, default_to_writer_impl, scoped_reader_pos,
-};
+use vivibin::{CanRead, CanWrite, Readable, Reader, Writable, WriteCtx, scoped_reader_pos};
 
 use crate::{
     SymbolName,
@@ -44,9 +41,16 @@ pub fn write_shops<C: ElfCategory>(ctx: &mut impl WriteCtx<C>, domain: &mut ElfW
     Ok(())
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Writable, Deserialize, Serialize)]
+#[extra_write_domain_deps(CanWrite<Cat, Option<String>>)]
 pub struct Shop {
+    #[require_domain]
     pub shop_id: String,
+    
+    #[write_args(WriteNullTermiantedSliceArgs {
+        symbol_name: Some(SymbolName::Internal('s')),
+        write_length: false,
+    })]
     pub items: Vec<SoldItem>,
 }
 
@@ -72,27 +76,6 @@ impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer>> Readable<D
         
         Ok(Self { shop_id, items })
     }
-}
-
-impl<C, D> Writable<C, D> for Shop
-where
-    C: HeapCategory,
-    D: CanWrite<C, String>
-        + CanWrite<C, Option<String>>
-        + CanWriteSliceWithArgs<C, SoldItem, WriteNullTermiantedSliceArgs>,
-{
-    type UnboxedPostState = ();
-    
-    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<C>, domain: &mut D) -> Result<()> {
-        domain.write(ctx, &self.shop_id)?;
-        domain.write_slice_args_fallback(ctx, &self.items, WriteNullTermiantedSliceArgs {
-            symbol_name: Some(SymbolName::Internal('s')),
-            write_length: false,
-        })?;
-        Ok(())
-    }
-    
-    default_to_writer_impl!(C);
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Readable, Writable, Deserialize, Serialize)]
