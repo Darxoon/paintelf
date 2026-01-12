@@ -7,7 +7,7 @@ use vivibin::{Readable, Reader, Writable, WriteCtx};
 
 use crate::{
     SymbolName,
-    binutil::{ElfCategory, ElfReadDomain, ElfWriteDomain, WriteSliceArgs, WriteStringArgs},
+    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, WriteSliceArgs, WriteStringArgs},
     formats::FileData,
 };
 
@@ -26,7 +26,7 @@ pub fn read_mapid(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<Fil
     Ok(FileData::MapId(areas))
 }
 
-pub fn write_mapid<C: ElfCategory>(ctx: &mut impl WriteCtx<C>, domain: &mut ElfWriteDomain<C>, areas: &[MapGroup]) -> Result<()> {
+pub fn write_mapid(ctx: &mut impl WriteCtx<DataCategory>, domain: &mut ElfWriteDomain, areas: &[MapGroup]) -> Result<()> {
     domain.write_symbol(ctx, "dataCount__Q3_4data3fld5mapid", |domain, ctx| {
         (areas.len() as u32).to_writer(ctx, domain)
     })?;

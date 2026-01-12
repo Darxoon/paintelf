@@ -9,7 +9,7 @@ use vivibin::{
 };
 
 use crate::{
-    binutil::{ElfCategory, ElfReadDomain, ElfWriteDomain, WriteNullTermiantedSliceArgs},
+    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, WriteNullTermiantedSliceArgs},
     formats::FileData,
 };
 
@@ -28,7 +28,7 @@ pub fn read_lct(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<FileD
     Ok(FileData::Lct(areas))
 }
 
-pub fn write_lct<C: ElfCategory>(ctx: &mut impl WriteCtx<C>, domain: &mut ElfWriteDomain<C>, lcts: &[AreaLct]) -> Result<()> {
+pub fn write_lct(ctx: &mut impl WriteCtx<DataCategory>, domain: &mut ElfWriteDomain, lcts: &[AreaLct]) -> Result<()> {
     domain.write_symbol(ctx, "all_lctAnimeDataTblLen__Q2_4data3lct", |domain, ctx| {
         (lcts.len() as u32 + 1).to_writer(ctx, domain)
     })?;

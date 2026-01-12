@@ -12,7 +12,7 @@ use indexmap::IndexMap;
 use vivibin::{HeapResolver, HeapToken, WriteCtx, WriteCtxImpl, WriteDomainExt, util::HashMap};
 
 use crate::{
-    binutil::{DataCategory, ElfCategoryType, ElfWriteDomain, UnitCategory},
+    binutil::{DataCategory, ElfCategoryType, ElfWriteDomain},
     elf::{
         Relocation, Section, Symbol, SymbolHeader, SymbolNameGenerator,
         container::{ELF_HEADER_IDENT, ElfContainer, ElfHeader},
@@ -92,7 +92,7 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
     let (mut symbol_declarations, mut relocations) = match data.heap_category_type() {
         ElfCategoryType::Unit => {
             let mut domain = ElfWriteDomain::new(data.string_dedup_size(), apply_debug_relocations);
-            let mut ctx: WriteCtxImpl<UnitCategory> = ElfWriteDomain::new_ctx();
+            let mut ctx: WriteCtxImpl<DataCategory> = ElfWriteDomain::new_ctx(DataCategory::Rodata);
             match data {
                 FileData::Maplink(maplink_areas) => {
                     write_maplink(&mut ctx, &mut domain, maplink_areas)?;
@@ -110,8 +110,8 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
             
             let mut resolver = HeapResolver::default();
             
-            let heap_id = ctx.heap_id_of(UnitCategory);
-            let heap = ctx.heap(&UnitCategory);
+            let heap_id = ctx.heap_id_of(DataCategory::Rodata);
+            let heap = ctx.heap(&DataCategory::Rodata);
             
             if let Some(heap) = heap {
                 resolver.write_heap(&mut domain, heap_id, heap)?;
@@ -124,8 +124,8 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
             (domain.symbol_declarations, domain.relocations)
         },
         ElfCategoryType::Data => {
-            let mut domain: ElfWriteDomain<DataCategory> = ElfWriteDomain::new(data.string_dedup_size(), apply_debug_relocations);
-            let mut ctx: WriteCtxImpl<DataCategory> = ElfWriteDomain::new_ctx();
+            let mut domain = ElfWriteDomain::new(data.string_dedup_size(), apply_debug_relocations);
+            let mut ctx: WriteCtxImpl<DataCategory> = ElfWriteDomain::new_ctx(DataCategory::Data);
             match data {
                 FileData::Lct(lcts) => {
                     write_lct(&mut ctx, &mut domain, lcts)?;

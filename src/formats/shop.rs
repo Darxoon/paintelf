@@ -7,7 +7,7 @@ use vivibin::{CanRead, CanWriteWithArgs, Readable, Reader, Writable, WriteCtx, s
 
 use crate::{
     SymbolName,
-    binutil::{ElfCategory, ElfReadDomain, ElfWriteDomain, NewWriteStringArgs, NewWriteNullTermiantedSliceArgs},
+    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, NewWriteNullTermiantedSliceArgs, NewWriteStringArgs},
     formats::FileData,
     util::pointer::Pointer,
 };
@@ -27,7 +27,7 @@ pub fn read_shops(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<Fil
     Ok(FileData::Shop(shop_list))
 }
 
-pub fn write_shops<C: ElfCategory>(ctx: &mut impl WriteCtx<C>, domain: &mut ElfWriteDomain<C>, shops: &[Shop]) -> Result<()> {
+pub fn write_shops(ctx: &mut impl WriteCtx<DataCategory>, domain: &mut ElfWriteDomain, shops: &[Shop]) -> Result<()> {
     let mut states = Vec::new();
     
     domain.write_symbol(ctx, "shopList__Q2_4data4shop", |domain, ctx| {
