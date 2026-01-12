@@ -3,11 +3,11 @@ use std::io::SeekFrom;
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
-use vivibin::{CanRead, CanWrite, Readable, Reader, Writable, WriteCtx, scoped_reader_pos};
+use vivibin::{CanRead, CanWriteWithArgs, Readable, Reader, Writable, WriteCtx, scoped_reader_pos};
 
 use crate::{
     SymbolName,
-    binutil::{ElfCategory, ElfReadDomain, ElfWriteDomain, WriteNullTermiantedSliceArgs},
+    binutil::{ElfCategory, ElfReadDomain, ElfWriteDomain, NewWriteStringArgs, NewWriteNullTermiantedSliceArgs},
     formats::FileData,
     util::pointer::Pointer,
 };
@@ -28,9 +28,11 @@ pub fn read_shops(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<Fil
 }
 
 pub fn write_shops<C: ElfCategory>(ctx: &mut impl WriteCtx<C>, domain: &mut ElfWriteDomain<C>, shops: &[Shop]) -> Result<()> {
+    let mut states = Vec::new();
+    
     domain.write_symbol(ctx, "shopList__Q2_4data4shop", |domain, ctx| {
         for shop in shops {
-            shop.to_writer(ctx, domain)?;
+            states.push(shop.to_writer(ctx, domain)?);
         }
         Ok(())
     })?;
@@ -38,16 +40,22 @@ pub fn write_shops<C: ElfCategory>(ctx: &mut impl WriteCtx<C>, domain: &mut ElfW
     domain.write_symbol(ctx, "shopListLen__Q2_4data4shop", |domain, ctx| {
         (shops.len() as u32).to_writer(ctx, domain)
     })?;
+    
+    for (shop, state) in shops.iter().zip(states) {
+        shop.to_writer_post(ctx, domain, state)?;
+    }
     Ok(())
 }
 
 #[derive(Clone, Debug, Writable, Deserialize, Serialize)]
-#[extra_write_domain_deps(CanWrite<Cat, Option<String>>)]
+#[extra_write_domain_deps(CanWriteWithArgs<Cat, Option<String>, NewWriteStringArgs>)]
+#[new_serialization]
 pub struct Shop {
     #[require_domain]
+    #[write_args(NewWriteStringArgs::default())]
     pub shop_id: String,
     
-    #[write_args(WriteNullTermiantedSliceArgs {
+    #[write_args(NewWriteNullTermiantedSliceArgs {
         symbol_name: Some(SymbolName::Internal('s')),
         write_length: false,
     })]
@@ -79,8 +87,11 @@ impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer>> Readable<D
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Readable, Writable, Deserialize, Serialize)]
+#[new_serialization]
 pub struct SoldItem {
     #[require_domain]
+    #[write_args(NewWriteStringArgs::default())]
     pub item_id: Option<String>,
+    #[write_args(NewWriteStringArgs::default())]
     pub requirement: Option<String>,
 }

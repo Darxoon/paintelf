@@ -219,6 +219,17 @@ impl Default for WriteStringArgs {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct NewWriteStringArgs {
+    pub deduplicate: bool,
+}
+
+impl Default for NewWriteStringArgs {
+    fn default() -> Self {
+        Self { deduplicate: true }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct WriteSliceArgs {
     pub symbol_name: Option<SymbolName>,
@@ -226,6 +237,12 @@ pub struct WriteSliceArgs {
 
 #[derive(Debug, Clone, Default)]
 pub struct WriteNullTermiantedSliceArgs {
+    pub symbol_name: Option<SymbolName>,
+    pub write_length: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct NewWriteNullTermiantedSliceArgs {
     pub symbol_name: Option<SymbolName>,
     pub write_length: bool,
 }
@@ -316,6 +333,61 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
         Ok(())
     }
     
+    pub fn write_string_new(&mut self, ctx: &mut impl WriteCtx<C>) -> Result<HeapToken> {
+        let current_token = ctx.heap_token_at_current_pos()?;
+        0u32.to_writer(ctx, self)?;
+        Ok(current_token)
+    }
+    
+    pub fn write_string_optional_new_post(&mut self, ctx: &mut impl WriteCtx<C>, value: Option<&str>, args: NewWriteStringArgs, base: HeapToken) -> Result<()> {
+        let Some(value) = value else {
+            return Ok(())
+        };
+        
+        self.write_string_new_post(ctx, value, args, base)
+    }
+    
+    pub fn write_string_new_post(&mut self, ctx: &mut impl WriteCtx<C>, value: &str, args: NewWriteStringArgs, base: HeapToken) -> Result<()> {
+        let existing_token = if args.deduplicate && ctx.position()? < self.string_dedup_size { 
+            self.string_map.get(value).copied()
+        } else {
+            None
+        };
+        
+        if let Some(token) = existing_token {
+            ctx.add_relocation(base, token)?;
+            return Ok(());
+        }
+        
+        let alignment = (self.prev_string_len > 2 || value.len() > 1).then_some(4).unwrap_or_default();
+        ctx.align_to(alignment)?;
+        
+        if args.deduplicate {
+            self.prev_string_len = value.len();
+        }
+        
+        let start_pos = ctx.position()? as usize;
+        let new_token = ctx.heap_token_at_current_pos()?;
+        ctx.add_relocation(base, new_token)?;
+        
+        ctx.write_c_str(value)?;
+        if value.len() > 2 {
+            ctx.align_to(4)?;
+        }
+        let name_size = ctx.position()? as usize - start_pos;
+        
+        self.put_symbol(SymbolDeclaration {
+            name: SymbolName::Internal('.'),
+            offset: new_token,
+            size: name_size as u32,
+        });
+        
+        if args.deduplicate {
+            self.string_map.insert(value.to_string(), new_token);
+        }
+        Ok(())
+    }
+    
     pub fn write_box<W: WriteCtx<C>>(
         &mut self, ctx: &mut W, args: Option<SymbolName>,
         write_content: impl FnOnce(&mut Self, &mut W::InnerCtx<'_>) -> Result<()>,
@@ -391,6 +463,62 @@ impl<C: ElfCategory> ElfWriteDomain<C> {
             self.put_symbol(SymbolDeclaration {
                 name,
                 offset: token,
+                size: links_size as u32,
+            });
+        }
+        Ok(())
+    }
+    
+    pub fn write_null_terminated_slice_new<T: Default + 'static, W: WriteCtx<C>>(
+        &mut self,
+        ctx: &mut W,
+        values: &[T],
+        args: NewWriteNullTermiantedSliceArgs,
+    ) -> Result<HeapToken> {
+        let current_token = ctx.heap_token_at_current_pos()?;
+        0u32.to_writer(ctx, self)?;
+        
+        if args.write_length {
+            (values.len() as u32).to_writer(ctx, self)?;
+        }
+        
+        Ok(current_token)
+    }
+    
+    pub fn write_null_terminated_slice_new_post<T: Default + 'static, W: WriteCtx<C>, P>(
+        &mut self,
+        ctx: &mut W,
+        values: &[T],
+        args: NewWriteNullTermiantedSliceArgs,
+        base: HeapToken,
+        write_content: impl Fn(&mut Self, &mut W, &T) -> Result<P>,
+        write_content_post: impl Fn(&mut Self, &mut W, &T, P) -> Result<()>,
+    ) -> Result<()> {
+        ctx.align_to(4)?;
+        
+        // write main values
+        let start_pos = ctx.position()? as usize;
+        let new_token = ctx.heap_token_at_current_pos()?;
+        ctx.add_relocation(base, new_token)?;
+        
+        let mut states = Vec::with_capacity(values.len() + 1);
+        
+        for value in values {
+            states.push(write_content(self, ctx, value)?);
+        }
+        states.push(write_content(self, ctx, &T::default())?);
+        
+        let links_size = ctx.position()? as usize - start_pos;
+        
+        // write post
+        for (value, state) in values.iter().zip(states) {
+            write_content_post(self, ctx, value, state)?;
+        }
+        
+        if let Some(name) = args.symbol_name {
+            self.put_symbol(SymbolDeclaration {
+                name,
+                offset: new_token,
                 size: links_size as u32,
             });
         }
@@ -510,6 +638,44 @@ impl<C: ElfCategory, T: Default + 'static> CanWriteSliceWithArgs<C, T, WriteNull
     }
 }
 
+impl<C: ElfCategory, T: Default + 'static> CanWriteSliceWithArgs<C, T, NewWriteNullTermiantedSliceArgs> for ElfWriteDomain<C> {
+    type PostState = HeapToken;
+    
+    fn write_slice_args_of<W: WriteCtx<C>, P>(
+        &mut self,
+        ctx: &mut W,
+        values: &[T],
+        args: NewWriteNullTermiantedSliceArgs,
+        _write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<P>,
+        _write_content_post: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T, P) -> Result<()>,
+    ) -> Result<HeapToken> {
+        self.write_null_terminated_slice_new(ctx, values, args)
+    }
+    
+    fn write_slice_args_post_of<W: WriteCtx<C>, P>(
+        &mut self,
+        ctx: &mut W,
+        values: &[T],
+        state: HeapToken,
+        args: NewWriteNullTermiantedSliceArgs,
+        write_content: impl Fn(&mut Self, &mut W, &T) -> Result<P>,
+        write_content_post: impl Fn(&mut Self, &mut W, &T, P) -> Result<()>,
+    ) -> Result<()> {
+        self.write_null_terminated_slice_new_post(
+            ctx,
+            values,
+            args,
+            state,
+            |domain, ctx, value| {
+                write_content(domain, ctx, value)
+            },
+            |domain, ctx, value, state| {
+                write_content_post(domain, ctx, value, state)
+            }
+        )
+    }
+}
+
 impl<C: ElfCategory> CanWrite<C, String> for ElfWriteDomain<C> {
     fn write(&mut self, ctx: &mut impl WriteCtx<C>, value: &String) -> Result<()> {
         self.write_string(ctx, value, WriteStringArgs::default())
@@ -527,5 +693,29 @@ impl<C: ElfCategory> CanWriteWithArgs<C, String, WriteStringArgs> for ElfWriteDo
     
     fn write_args(&mut self, ctx: &mut impl WriteCtx<C>, value: &String, args: WriteStringArgs) -> Result<()> {
         self.write_string(ctx, value, args)
+    }
+}
+
+impl<C: ElfCategory> CanWriteWithArgs<C, String, NewWriteStringArgs> for ElfWriteDomain<C> {
+    type PostState = HeapToken;
+    
+    fn write_args(&mut self, ctx: &mut impl WriteCtx<C>, _: &String, _: NewWriteStringArgs) -> Result<HeapToken> {
+        self.write_string_new(ctx)
+    }
+    
+    fn write_args_post(&mut self, ctx: &mut impl WriteCtx<C>, value: &String, state: HeapToken, args: NewWriteStringArgs) -> Result<()> {
+        self.write_string_new_post(ctx, value, args, state)
+    }
+}
+
+impl<C: ElfCategory> CanWriteWithArgs<C, Option<String>, NewWriteStringArgs> for ElfWriteDomain<C> {
+    type PostState = HeapToken;
+    
+    fn write_args(&mut self, ctx: &mut impl WriteCtx<C>, _: &Option<String>, _: NewWriteStringArgs) -> Result<HeapToken> {
+        self.write_string_new(ctx)
+    }
+    
+    fn write_args_post(&mut self, ctx: &mut impl WriteCtx<C>, value: &Option<String>, state: HeapToken, args: NewWriteStringArgs) -> Result<()> {
+        self.write_string_optional_new_post(ctx, value.as_deref(), args, state)
     }
 }
