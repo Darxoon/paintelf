@@ -464,35 +464,44 @@ impl<C: ElfCategory> CanWriteSlice<C> for ElfWriteDomain<C> {
         values: &[T],
         write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<()>,
     ) -> Result<()> {
-        self.write_slice(ctx, values, None, write_content)
+        self.write_slice(ctx, values, None, write_content)?;
+        Ok(())
     }
 }
 
 impl<C: ElfCategory, T: 'static> CanWriteSliceWithArgs<C, T, Option<SymbolName>> for ElfWriteDomain<C> {
     type PostState = ();
     
-    fn write_slice_args_of<W: WriteCtx<C>>(
+    fn write_slice_args_of<W: WriteCtx<C>, P>(
         &mut self,
         ctx: &mut W,
         values: &[T],
         args: Option<SymbolName>,
-        write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<()>,
+        write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<P>,
+        _write_content_post: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T, P) -> Result<()>,
     ) -> Result<()> {
-        self.write_slice(ctx, values, args, write_content)
+        self.write_slice(ctx, values, args, |domain, ctx, value| {
+            write_content(domain, ctx, value)?;
+            Ok(())
+        })
     }
 }
 
 impl<C: ElfCategory, T: Default + 'static> CanWriteSliceWithArgs<C, T, WriteNullTermiantedSliceArgs> for ElfWriteDomain<C> {
     type PostState = ();
     
-    fn write_slice_args_of<W: WriteCtx<C>>(
+    fn write_slice_args_of<W: WriteCtx<C>, P>(
         &mut self,
         ctx: &mut W,
         values: &[T],
         args: WriteNullTermiantedSliceArgs,
-        write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<()>,
+        write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<P>,
+        _write_content_post: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T, P) -> Result<()>,
     ) -> Result<()> {
-        self.write_null_terminated_slice(ctx, values, args, write_content)
+        self.write_null_terminated_slice(ctx, values, args, |domain, ctx, value| {
+            write_content(domain, ctx, value)?;
+            Ok(())
+        })
     }
 }
 
