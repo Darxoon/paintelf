@@ -5,13 +5,13 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.100"
-binrw = "0.15.0"
+binrw = "0.15.1"
 byteorder = "1.5.0"
-indexmap = "2.11.4"
+indexmap = "2.13.0"
 indoc = "2.0.6"
 memchr = "2.7.6"
 serde = { version = "1.0.228", features = ["derive"] }
-serde_yaml_bw = "2.4.1"
+serde_yaml_bw = "2.5.4"
 vivibin = { path = "vivibin" }
 
 [lints.clippy]

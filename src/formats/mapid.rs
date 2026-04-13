@@ -7,7 +7,7 @@ use vivibin::{Readable, Reader, Writable, WriteCtx};
 
 use crate::{
     SymbolName,
-    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, WriteSliceArgs, WriteStringArgs},
+    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, NewWriteSliceArgs, NewWriteStringArgs},
     formats::FileData,
 };
 
@@ -31,29 +31,37 @@ pub fn write_mapid(ctx: &mut impl WriteCtx<DataCategory>, domain: &mut ElfWriteD
         (areas.len() as u32).to_writer(ctx, domain)
     })?;
     
+    let mut states = Vec::with_capacity(areas.len());
+    
     domain.write_symbol(ctx, "datas__Q3_4data3fld5mapid", |domain, ctx| {
         for area in areas {
-            area.to_writer(ctx, domain)?;
+            states.push(area.to_writer(ctx, domain)?);
         }
         Ok(())
     })?;
+    
+    for (area, state) in areas.iter().zip(states) {
+        area.to_writer_post(ctx, domain, state)?;
+    }
     
     Ok(())
 }
 
 #[derive(Clone, Debug, Readable, Writable, Serialize, Deserialize)]
+#[new_serialization]
 pub struct MapGroup {
     #[require_domain]
-    #[write_args(WriteStringArgs { deduplicate: false })]
+    #[write_args(NewWriteStringArgs { category: None })]
     pub id: String,
     
-    #[write_args(WriteSliceArgs {
+    #[write_args(NewWriteSliceArgs {
         symbol_name: Some(SymbolName::InternalNamed(self.id.clone())),
     })]
     pub maps: Vec<MapDefinition>,
 }
 
 #[derive(Debug, Clone, Readable, Writable, Serialize, Deserialize)]
+#[new_serialization]
 pub struct MapDefinition {
     #[require_domain]
     pub group_id: String,

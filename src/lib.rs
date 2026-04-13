@@ -110,11 +110,16 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
             
             let mut resolver = HeapResolver::default();
             
-            let heap_id = ctx.heap_id_of(DataCategory::Rodata);
-            let heap = ctx.heap(&DataCategory::Rodata);
+            let heap_id = ctx.heap_id_of(&DataCategory::Rodata);
             
-            if let Some(heap) = heap {
-                resolver.write_heap(&mut domain, heap_id, heap)?;
+            let rodata_heap = ctx.heap(&DataCategory::Rodata);
+            if let Some(rodata_heap) = rodata_heap {
+                resolver.write_heap(&mut domain, heap_id, rodata_heap)?;
+            }
+            
+            let string_heap = ctx.heap(&DataCategory::Strings);
+            if let Some(string_heap) = string_heap {
+                resolver.write_heap(&mut domain, heap_id, string_heap)?;
             }
             
             data_buffer = None;
@@ -135,8 +140,8 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
             
             let mut resolver = HeapResolver::default();
             
-            let data_id = ctx.heap_id_of(DataCategory::Data);
-            let rodata_id = ctx.heap_id_of(DataCategory::Rodata);
+            let data_id = ctx.heap_id_of(&DataCategory::Data);
+            let rodata_id = ctx.heap_id_of(&DataCategory::Rodata);
             
             let data_heap = ctx.heap(&DataCategory::Data);
             if let Some(data_heap) = data_heap {
@@ -146,6 +151,11 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
             let rodata_heap = ctx.heap(&DataCategory::Rodata);
             if let Some(rodata_heap) = rodata_heap {
                 resolver.write_heap(&mut domain, rodata_id, rodata_heap)?;
+            }
+            
+            let string_heap = ctx.heap(&DataCategory::Strings);
+            if let Some(string_heap) = string_heap {
+                resolver.write_heap(&mut domain, rodata_id, string_heap)?;
             }
             
             // TODO: improve API of this
@@ -364,8 +374,7 @@ pub fn write_symtab(
     let mut strtab = Cursor::new(initial_content);
     strtab.seek(SeekFrom::End(0))?;
     
-    #[allow(clippy::let_with_type_underscore)]
-    let mut write_symbol: _ = |writer: &mut Cursor<Vec<u8>>, symbol_count: &mut usize, symbol: &SymbolDeclaration, st_info: u8| -> Result<()> {
+    let mut write_symbol = |writer: &mut Cursor<Vec<u8>>, symbol_count: &mut usize, symbol: &SymbolDeclaration, st_info: u8| -> Result<()> {
         // serialize name
         let name_ptr = if let Some(symbol_name) = symbol.name.as_str() {
             let name_ptr = Pointer::current(&mut strtab)?;

@@ -52,7 +52,7 @@ pub fn write_shops(ctx: &mut impl WriteCtx<DataCategory>, domain: &mut ElfWriteD
 #[new_serialization]
 pub struct Shop {
     #[require_domain]
-    #[write_args(NewWriteStringArgs::default())]
+    #[write_args(NewWriteStringArgs { category: None })]
     pub shop_id: String,
     
     #[write_args(NewWriteNullTermiantedSliceArgs {
