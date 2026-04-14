@@ -9,7 +9,7 @@ use std::{
 use anyhow::{Result, anyhow, bail};
 use indoc::printdoc;
 use paintelf::{
-    binutil::ElfReadDomain,
+    ElfReadDomain,
     elf::{Section, container::ElfContainer},
     formats::{
         FileData, FileType, chr::read_chr, dispos::read_dispos, lct::read_lct, mapid::read_mapid,

@@ -3,14 +3,11 @@ use std::io::SeekFrom;
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
-use vivibin::{
-    CanRead, CanReadVec, CanWrite, CanWriteSliceWithArgs, CanWriteWithArgs, HeapCategory, Readable,
-    Reader, Writable, WriteSliceWithArgsFallbackExt, default_to_writer_impl, scoped_reader_pos,
-};
+use vivibin::{CanRead, CanReadVec, CanWrite, Readable, Reader, Writable, scoped_reader_pos};
 
 use crate::{
     SymbolName,
-    binutil::{ElfReadDomain, WriteStringArgs},
+    binutil::{ElfReadDomain, WriteSliceArgs, WriteStringArgs},
     formats::FileData,
     util::pointer::Pointer,
 };
@@ -69,34 +66,28 @@ impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer> + CanReadVe
         let map_mobjs: Vec<DisposMobj> = read_dispos_item_vec(reader, domain)?;
         let map_items: Vec<DisposItem> = read_dispos_item_vec(reader, domain)?;
         
-        Ok(Self { id, map_npcs, map_mobjs, map_items  })
+        Ok(Self {
+            id,
+            map_npcs,
+            map_mobjs,
+            map_items,
+        })
     }
 }
 
-#[derive(Debug, Clone, Readable, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable, Serialize, Deserialize)]
 #[boxed]
 #[extra_read_domain_deps(CanRead<Option<String>>)]
+#[extra_write_domain_deps(CanWrite<Cat, Option<String>>)]
 pub struct DisposNpc {
     #[require_domain]
+    #[write_args(WriteStringArgs { category: None })]
     pub map_id: String,
+    
+    #[write_args(WriteSliceArgs {
+        symbol_name: Some(SymbolName::InternalNamed(self.map_id.clone())),
+    })]
     pub npcs: Vec<Npc>,
-}
-
-impl<C, D> Writable<C, D> for DisposNpc
-where
-    C: HeapCategory,
-    D: CanWriteWithArgs<C, String, WriteStringArgs> + CanWrite<C, Option<String>> + CanWriteSliceWithArgs<C, Npc, Option<SymbolName>>,
-{
-    type UnboxedPostState = ();
-    
-    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<C>, domain: &mut D) -> Result<()> {
-        // TODO: turning off deduplication is a hack, figure out serialization order better
-        domain.write_args(ctx, &self.map_id, WriteStringArgs { deduplicate: false })?;
-        domain.write_slice_args_fallback(ctx, &self.npcs, Some(SymbolName::InternalNamed(self.map_id.clone())))?;
-        Ok(())
-    }
-    
-    default_to_writer_impl!(C);
 }
 
 #[derive(Debug, Clone, Readable, Writable, Deserialize, Serialize)]
@@ -183,32 +174,19 @@ pub struct Npc {
     pub field_0x134: u32,
 }
 
-#[derive(Debug, Clone, Readable, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable, Serialize, Deserialize)]
 #[boxed]
 #[extra_read_domain_deps(CanRead<Option<String>>)]
+#[extra_write_domain_deps(CanWrite<Cat, Option<String>>)]
 pub struct DisposMobj {
     #[require_domain]
+    #[write_args(WriteStringArgs { category: None })]
     pub map_id: String,
+    
+    #[write_args(WriteSliceArgs {
+        symbol_name: Some(SymbolName::InternalNamed(self.map_id.clone())),
+    })]
     pub mobjs: Vec<Mobj>,
-}
-
-impl<C, D> Writable<C, D> for DisposMobj
-where
-    C: HeapCategory,
-    D: CanWriteWithArgs<C, String, WriteStringArgs>
-        + CanWrite<C, Option<String>>
-        + CanWriteSliceWithArgs<C, Mobj, Option<SymbolName>>,
-{
-    type UnboxedPostState = ();
-    
-    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<C>, domain: &mut D) -> Result<()> {
-        // TODO: turning off deduplication is a hack, figure out serialization order better
-        domain.write_args(ctx, &self.map_id, WriteStringArgs { deduplicate: false })?;
-        domain.write_slice_args_fallback(ctx, &self.mobjs, Some(SymbolName::InternalNamed(self.map_id.clone())))?;
-        Ok(())
-    }
-    
-    default_to_writer_impl!(C);
 }
 
 #[derive(Debug, Clone, Readable, Writable, Deserialize, Serialize)]
@@ -244,31 +222,18 @@ pub struct Mobj {
     pub field_0x68: u32,
 }
 
-#[derive(Debug, Clone, Readable, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable, Serialize, Deserialize)]
 #[boxed]
 #[extra_read_domain_deps(CanRead<Option<String>>)]
 pub struct DisposItem {
     #[require_domain]
+    #[write_args(WriteStringArgs { category: None })]
     pub map_id: String,
+    
+    #[write_args(WriteSliceArgs {
+        symbol_name: Some(SymbolName::InternalNamed(self.map_id.clone())),
+    })]
     pub items: Vec<Item>,
-}
-
-impl<C, D> Writable<C, D> for DisposItem
-where
-    C: HeapCategory,
-    D: CanWriteWithArgs<C, String, WriteStringArgs>
-        + CanWriteSliceWithArgs<C, Item, Option<SymbolName>>,
-{
-    type UnboxedPostState = ();
-    
-    fn to_writer_unboxed(&self, ctx: &mut impl vivibin::WriteCtx<C>, domain: &mut D) -> Result<()> {
-        // TODO: turning off deduplication is a hack, figure out serialization order better
-        domain.write_args(ctx, &self.map_id, WriteStringArgs { deduplicate: false })?;
-        domain.write_slice_args_fallback(ctx, &self.items, Some(SymbolName::InternalNamed(self.map_id.clone())))?;
-        Ok(())
-    }
-    
-    default_to_writer_impl!(C);
 }
 
 #[derive(Debug, Clone, Readable, Writable, Deserialize, Serialize)]

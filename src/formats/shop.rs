@@ -7,7 +7,7 @@ use vivibin::{CanRead, CanWriteWithArgs, Readable, Reader, Writable, WriteCtx, s
 
 use crate::{
     SymbolName,
-    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, NewWriteNullTermiantedSliceArgs, NewWriteStringArgs},
+    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, WriteNullTermiantedSliceArgs, WriteStringArgs},
     formats::FileData,
     util::pointer::Pointer,
 };
@@ -48,14 +48,13 @@ pub fn write_shops(ctx: &mut impl WriteCtx<DataCategory>, domain: &mut ElfWriteD
 }
 
 #[derive(Clone, Debug, Writable, Deserialize, Serialize)]
-#[extra_write_domain_deps(CanWriteWithArgs<Cat, Option<String>, NewWriteStringArgs>)]
-#[new_serialization]
+#[extra_write_domain_deps(CanWriteWithArgs<Cat, Option<String>, WriteStringArgs>)]
 pub struct Shop {
     #[require_domain]
-    #[write_args(NewWriteStringArgs { category: None })]
+    #[write_args(WriteStringArgs { category: None })]
     pub shop_id: String,
     
-    #[write_args(NewWriteNullTermiantedSliceArgs {
+    #[write_args(WriteNullTermiantedSliceArgs {
         symbol_name: Some(SymbolName::Internal('s')),
         write_length: false,
     })]
@@ -87,11 +86,10 @@ impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer>> Readable<D
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Readable, Writable, Deserialize, Serialize)]
-#[new_serialization]
 pub struct SoldItem {
     #[require_domain]
-    #[write_args(NewWriteStringArgs::default())]
+    #[write_args(WriteStringArgs::default())]
     pub item_id: Option<String>,
-    #[write_args(NewWriteStringArgs::default())]
+    #[write_args(WriteStringArgs::default())]
     pub requirement: Option<String>,
 }

@@ -12,7 +12,7 @@ use indexmap::IndexMap;
 use vivibin::{HeapResolver, HeapToken, WriteCtx, WriteCtxImpl, WriteDomainExt, util::HashMap};
 
 use crate::{
-    binutil::{DataCategory, ElfCategoryType, ElfWriteDomain},
+    binutil::ElfCategoryType,
     elf::{
         Relocation, Section, Symbol, SymbolHeader, SymbolNameGenerator,
         container::{ELF_HEADER_IDENT, ElfContainer, ElfHeader},
@@ -23,11 +23,13 @@ use crate::{
     util::pointer::Pointer,
 };
 
-pub mod binutil;
+pub(crate) mod binutil;
 pub mod elf;
 pub mod formats;
 pub mod matching;
 pub mod util;
+
+pub use binutil::{DataCategory, ElfReadDomain, ElfWriteDomain};
 
 #[cfg(test)]
 mod tests;

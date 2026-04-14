@@ -4,7 +4,9 @@ use anyhow::{Result, anyhow, bail, ensure};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use vivibin::{
-    CanRead, CanReadVec, CanWrite, CanWriteBox, CanWriteSlice, CanWriteSliceWithArgs, CanWriteWithArgs, EndianSpecific, Endianness, HeapCategory, HeapID, HeapToken, ReadDomain, Readable, Reader, Writable, WriteCtx, WriteDomain, Writer, util::HashMap
+    CanRead, CanReadVec, CanWrite, CanWriteBox, CanWriteSlice, CanWriteSliceWithArgs, CanWriteWithArgs,
+    EndianSpecific, Endianness, HeapCategory, HeapID, HeapToken, ReadDomain, Readable, Reader, Writable,
+    WriteCtx, WriteDomain, Writer, util::HashMap,
 };
 
 use crate::{
@@ -190,21 +192,10 @@ pub enum ElfCategoryType {
 
 #[derive(Debug, Clone)]
 pub struct WriteStringArgs {
-    pub deduplicate: bool,
-}
-
-impl Default for WriteStringArgs {
-    fn default() -> Self {
-        Self { deduplicate: true }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct NewWriteStringArgs {
     pub category: Option<DataCategory>,
 }
 
-impl Default for NewWriteStringArgs {
+impl Default for WriteStringArgs {
     fn default() -> Self {
         Self {
             category: Some(DataCategory::Strings),
@@ -218,18 +209,7 @@ pub struct WriteSliceArgs {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct NewWriteSliceArgs {
-    pub symbol_name: Option<SymbolName>,
-}
-
-#[derive(Debug, Clone, Default)]
 pub struct WriteNullTermiantedSliceArgs {
-    pub symbol_name: Option<SymbolName>,
-    pub write_length: bool,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct NewWriteNullTermiantedSliceArgs {
     pub symbol_name: Option<SymbolName>,
     pub write_length: bool,
 }
@@ -263,67 +243,13 @@ impl ElfWriteDomain {
         }
     }
     
-    pub fn write_string_optional(&mut self, ctx: &mut impl WriteCtx<DataCategory>, value: Option<&str>, args: WriteStringArgs) -> Result<()> {
-        let Some(value) = value else {
-            0u32.to_writer(ctx, self)?;
-            return Ok(());
-        };
-        
-        self.write_string(ctx, value, args)
-    }
-    
-    pub fn write_string(&mut self, ctx: &mut impl WriteCtx<DataCategory>, value: &str, args: WriteStringArgs) -> Result<()> {
-        // Search for if this string has already been written before
-        // TODO: account for substrings (use crate memchr?)
-        let existing_token = if args.deduplicate && ctx.position()? < self.string_dedup_size { 
-            self.string_map.get(&(HeapID(0), Cow::from(value))).copied()
-        } else {
-            None
-        };
-        
-        if let Some(token) = existing_token {
-            ctx.write_token::<4>(token)?;
-            return Ok(());
-        }
-        
-        let alignment = (self.prev_string_lengths[0] > 2 || value.len() > 1).then_some(4).unwrap_or_default();
-        
-        if args.deduplicate {
-            self.prev_string_lengths[0] = value.len();
-        }
-        
-        let mut name_size: usize = 0;
-        let new_token = ctx.allocate_next_block_aligned(Some(DataCategory::Rodata), alignment, false, |ctx| {
-            let start_pos = ctx.position()? as usize;
-            ctx.write_c_str(value)?;
-            if value.len() > 2 {
-                ctx.align_to(4)?;
-            }
-            name_size = ctx.position()? as usize - start_pos;
-            Ok(())
-        })?;
-        
-        self.put_symbol(SymbolDeclaration {
-            name: SymbolName::Internal('.'),
-            offset: new_token,
-            size: name_size as u32,
-        });
-        
-        if args.deduplicate {
-            self.string_map.insert((HeapID(0), Cow::from(value.to_owned())), new_token);
-        }
-        
-        ctx.write_token::<4>(new_token)?;
-        Ok(())
-    }
-    
     pub fn write_string_new(&mut self, ctx: &mut impl WriteCtx<DataCategory>) -> Result<HeapToken> {
         let current_token = ctx.heap_token_at_current_pos()?;
         0u32.to_writer(ctx, self)?;
         Ok(current_token)
     }
     
-    pub fn write_string_optional_new_post(&mut self, ctx: &mut impl WriteCtx<DataCategory>, value: Option<&str>, args: NewWriteStringArgs, base: HeapToken) -> Result<()> {
+    pub fn write_string_optional_new_post(&mut self, ctx: &mut impl WriteCtx<DataCategory>, value: Option<&str>, args: WriteStringArgs, base: HeapToken) -> Result<()> {
         let Some(value) = value else {
             return Ok(())
         };
@@ -331,7 +257,7 @@ impl ElfWriteDomain {
         self.write_string_new_post(ctx, value, args, base)
     }
     
-    pub fn write_string_new_post(&mut self, ctx: &mut impl WriteCtx<DataCategory>, value: &str, args: NewWriteStringArgs, base: HeapToken) -> Result<()> {
+    pub fn write_string_new_post(&mut self, ctx: &mut impl WriteCtx<DataCategory>, value: &str, args: WriteStringArgs, base: HeapToken) -> Result<()> {
         let category = args.category.unwrap_or(*ctx.default_category());
         let heap_id = ctx.heap_id_of(&category);
         
@@ -374,6 +300,7 @@ impl ElfWriteDomain {
         Ok(())
     }
     
+    // TODO: legacy serialization
     pub fn write_box<W: WriteCtx<DataCategory>>(
         &mut self, ctx: &mut W, args: Option<SymbolName>,
         write_content: impl FnOnce(&mut Self, &mut W::InnerCtx<'_>) -> Result<()>,
@@ -389,33 +316,6 @@ impl ElfWriteDomain {
         ctx.write_token::<4>(token)?;
         
         if let Some(name) = args {
-            self.put_symbol(SymbolDeclaration {
-                name,
-                offset: token,
-                size: links_size as u32,
-            });
-        }
-        Ok(())
-    }
-    
-    pub fn write_slice<T: 'static, W: WriteCtx<DataCategory>>(
-        &mut self, ctx: &mut W, values: &[T], args: WriteSliceArgs,
-        write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<()>,
-    ) -> Result<()> {
-        let mut links_size: usize = 0;
-        let token = ctx.allocate_next_block_aligned(None, 4, false, |ctx| {
-            let start_pos = ctx.position()? as usize;
-            for value in values {
-                write_content(self, ctx, value)?;
-            }
-            links_size = ctx.position()? as usize - start_pos;
-            Ok(())
-        })?;
-        
-        ctx.write_token::<4>(token)?;
-        (values.len() as u32).to_writer(ctx, self)?;
-        
-        if let Some(name) = args.symbol_name {
             self.put_symbol(SymbolDeclaration {
                 name,
                 offset: token,
@@ -442,7 +342,7 @@ impl ElfWriteDomain {
         ctx: &mut W,
         values: &[T],
         base: HeapToken,
-        args: NewWriteSliceArgs,
+        args: WriteSliceArgs,
         write_content: impl Fn(&mut Self, &mut W, &T) -> Result<P>,
         write_content_post: impl Fn(&mut Self, &mut W, &T, P) -> Result<()>,
     ) -> Result<()> {
@@ -476,41 +376,11 @@ impl ElfWriteDomain {
         Ok(())
     }
     
-    pub fn write_null_terminated_slice<T: Default + 'static, W: WriteCtx<DataCategory>>(
-        &mut self, ctx: &mut W, values: &[T], args: WriteNullTermiantedSliceArgs,
-        write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<()>,
-    ) -> Result<()> {
-        let mut links_size: usize = 0;
-        let token = ctx.allocate_next_block_aligned(None, 4, false, |ctx| {
-            let start_pos = ctx.position()? as usize;
-            for value in values {
-                write_content(self, ctx, value)?;
-            }
-            write_content(self, ctx, &T::default())?;
-            links_size = ctx.position()? as usize - start_pos;
-            Ok(())
-        })?;
-        
-        ctx.write_token::<4>(token)?;
-        if args.write_length {
-            (values.len() as u32).to_writer(ctx, self)?;
-        }
-        
-        if let Some(name) = args.symbol_name {
-            self.put_symbol(SymbolDeclaration {
-                name,
-                offset: token,
-                size: links_size as u32,
-            });
-        }
-        Ok(())
-    }
-    
     pub fn write_null_terminated_slice_new<T: Default + 'static, W: WriteCtx<DataCategory>>(
         &mut self,
         ctx: &mut W,
         values: &[T],
-        args: NewWriteNullTermiantedSliceArgs,
+        args: WriteNullTermiantedSliceArgs,
     ) -> Result<HeapToken> {
         let current_token = ctx.heap_token_at_current_pos()?;
         0u32.to_writer(ctx, self)?;
@@ -526,7 +396,7 @@ impl ElfWriteDomain {
         &mut self,
         ctx: &mut W,
         values: &[T],
-        args: NewWriteNullTermiantedSliceArgs,
+        args: WriteNullTermiantedSliceArgs,
         base: HeapToken,
         write_content: impl Fn(&mut Self, &mut W, &T) -> Result<P>,
         write_content_post: impl Fn(&mut Self, &mut W, &T, P) -> Result<()>,
@@ -628,43 +498,38 @@ impl CanWriteBox<DataCategory> for ElfWriteDomain {
 // TODO: box with args
 
 impl CanWriteSlice<DataCategory> for ElfWriteDomain {
-    fn write_slice_of<T: 'static, W: WriteCtx<DataCategory>>(
+    type PostState = HeapToken;
+    
+    fn write_slice_of<T: 'static, W: WriteCtx<DataCategory>, P>(
         &mut self,
         ctx: &mut W,
         values: &[T],
-        write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<()>,
+        _write_content: impl Fn(&mut Self, &mut W, &T) -> Result<P>,
+        _write_content_post: impl Fn(&mut Self, &mut W, &T, P) -> Result<()>,
+    ) -> Result<HeapToken> {
+        self.write_slice_new(ctx, values)
+    }
+    
+    fn write_slice_of_post<T: 'static, W: WriteCtx<DataCategory>, P>(
+        &mut self,
+        ctx: &mut W,
+        values: &[T],
+        state: Self::PostState,
+        write_content: impl Fn(&mut Self, &mut W, &T) -> Result<P>,
+        write_content_post: impl Fn(&mut Self, &mut W, &T, P) -> Result<()>,
     ) -> Result<()> {
-        self.write_slice(ctx, values, WriteSliceArgs::default(), write_content)?;
-        Ok(())
+        self.write_slice_new_post(ctx, values, state, WriteSliceArgs::default(), write_content, write_content_post)
     }
 }
 
 impl<T: 'static> CanWriteSliceWithArgs<DataCategory, T, WriteSliceArgs> for ElfWriteDomain {
-    type PostState = ();
-    
-    fn write_slice_args_of<W: WriteCtx<DataCategory>, P>(
-        &mut self,
-        ctx: &mut W,
-        values: &[T],
-        args: WriteSliceArgs,
-        write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<P>,
-        _write_content_post: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T, P) -> Result<()>,
-    ) -> Result<()> {
-        self.write_slice(ctx, values, args, |domain, ctx, value| {
-            write_content(domain, ctx, value)?;
-            Ok(())
-        })
-    }
-}
-
-impl<T: 'static> CanWriteSliceWithArgs<DataCategory, T, NewWriteSliceArgs> for ElfWriteDomain {
     type PostState = HeapToken;
     
     fn write_slice_args_of<W: WriteCtx<DataCategory>, P>(
         &mut self,
         ctx: &mut W,
         values: &[T],
-        _args: NewWriteSliceArgs,
+        _args: WriteSliceArgs,
         _write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<P>,
         _write_content_post: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T, P) -> Result<()>,
     ) -> Result<HeapToken> {
@@ -676,7 +541,7 @@ impl<T: 'static> CanWriteSliceWithArgs<DataCategory, T, NewWriteSliceArgs> for E
         ctx: &mut W,
         values: &[T],
         state: Self::PostState,
-        args: NewWriteSliceArgs,
+        args: WriteSliceArgs,
         write_content: impl Fn(&mut Self, &mut W, &T) -> Result<P>,
         write_content_post: impl Fn(&mut Self, &mut W, &T, P) -> Result<()>,
     ) -> Result<()> {
@@ -685,31 +550,13 @@ impl<T: 'static> CanWriteSliceWithArgs<DataCategory, T, NewWriteSliceArgs> for E
 }
 
 impl<T: Default + 'static> CanWriteSliceWithArgs<DataCategory, T, WriteNullTermiantedSliceArgs> for ElfWriteDomain {
-    type PostState = ();
-    
-    fn write_slice_args_of<W: WriteCtx<DataCategory>, P>(
-        &mut self,
-        ctx: &mut W,
-        values: &[T],
-        args: WriteNullTermiantedSliceArgs,
-        write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<P>,
-        _write_content_post: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T, P) -> Result<()>,
-    ) -> Result<()> {
-        self.write_null_terminated_slice(ctx, values, args, |domain, ctx, value| {
-            write_content(domain, ctx, value)?;
-            Ok(())
-        })
-    }
-}
-
-impl<T: Default + 'static> CanWriteSliceWithArgs<DataCategory, T, NewWriteNullTermiantedSliceArgs> for ElfWriteDomain {
     type PostState = HeapToken;
     
     fn write_slice_args_of<W: WriteCtx<DataCategory>, P>(
         &mut self,
         ctx: &mut W,
         values: &[T],
-        args: NewWriteNullTermiantedSliceArgs,
+        args: WriteNullTermiantedSliceArgs,
         _write_content: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T) -> Result<P>,
         _write_content_post: impl Fn(&mut Self, &mut W::InnerCtx<'_>, &T, P) -> Result<()>,
     ) -> Result<HeapToken> {
@@ -721,7 +568,7 @@ impl<T: Default + 'static> CanWriteSliceWithArgs<DataCategory, T, NewWriteNullTe
         ctx: &mut W,
         values: &[T],
         state: HeapToken,
-        args: NewWriteNullTermiantedSliceArgs,
+        args: WriteNullTermiantedSliceArgs,
         write_content: impl Fn(&mut Self, &mut W, &T) -> Result<P>,
         write_content_post: impl Fn(&mut Self, &mut W, &T, P) -> Result<()>,
     ) -> Result<()> {
@@ -748,46 +595,42 @@ impl CanWrite<DataCategory, String> for ElfWriteDomain {
     }
     
     fn write_post(&mut self, ctx: &mut impl WriteCtx<DataCategory>, value: &String, state: HeapToken) -> Result<()> {
-        self.write_string_new_post(ctx, value, NewWriteStringArgs::default(), state)
+        self.write_string_new_post(ctx, value, WriteStringArgs::default(), state)
     }
 }
 
 impl CanWrite<DataCategory, Option<String>> for ElfWriteDomain {
-    type PostState = ();
+    type PostState = HeapToken;
     
-    fn write(&mut self, ctx: &mut impl WriteCtx<DataCategory>, value: &Option<String>) -> Result<()> {
-        self.write_string_optional(ctx, value.as_deref(), WriteStringArgs::default())
+    fn write(&mut self, ctx: &mut impl WriteCtx<DataCategory>, _: &Option<String>) -> Result<HeapToken> {
+        self.write_string_new(ctx)
+    }
+    
+    fn write_post(&mut self, ctx: &mut impl WriteCtx<DataCategory>, value: &Option<String>, state: HeapToken) -> Result<()> {
+        self.write_string_optional_new_post(ctx, value.as_deref(), WriteStringArgs::default(), state)
     }
 }
 
 impl CanWriteWithArgs<DataCategory, String, WriteStringArgs> for ElfWriteDomain {
-    type PostState = ();
-    
-    fn write_args(&mut self, ctx: &mut impl WriteCtx<DataCategory>, value: &String, args: WriteStringArgs) -> Result<()> {
-        self.write_string(ctx, value, args)
-    }
-}
-
-impl CanWriteWithArgs<DataCategory, String, NewWriteStringArgs> for ElfWriteDomain {
     type PostState = HeapToken;
     
-    fn write_args(&mut self, ctx: &mut impl WriteCtx<DataCategory>, _: &String, _: NewWriteStringArgs) -> Result<HeapToken> {
+    fn write_args(&mut self, ctx: &mut impl WriteCtx<DataCategory>, _: &String, _: WriteStringArgs) -> Result<HeapToken> {
         self.write_string_new(ctx)
     }
     
-    fn write_args_post(&mut self, ctx: &mut impl WriteCtx<DataCategory>, value: &String, state: HeapToken, args: NewWriteStringArgs) -> Result<()> {
+    fn write_args_post(&mut self, ctx: &mut impl WriteCtx<DataCategory>, value: &String, state: HeapToken, args: WriteStringArgs) -> Result<()> {
         self.write_string_new_post(ctx, value, args, state)
     }
 }
 
-impl CanWriteWithArgs<DataCategory, Option<String>, NewWriteStringArgs> for ElfWriteDomain {
+impl CanWriteWithArgs<DataCategory, Option<String>, WriteStringArgs> for ElfWriteDomain {
     type PostState = HeapToken;
     
-    fn write_args(&mut self, ctx: &mut impl WriteCtx<DataCategory>, _: &Option<String>, _: NewWriteStringArgs) -> Result<HeapToken> {
+    fn write_args(&mut self, ctx: &mut impl WriteCtx<DataCategory>, _: &Option<String>, _: WriteStringArgs) -> Result<HeapToken> {
         self.write_string_new(ctx)
     }
     
-    fn write_args_post(&mut self, ctx: &mut impl WriteCtx<DataCategory>, value: &Option<String>, state: HeapToken, args: NewWriteStringArgs) -> Result<()> {
+    fn write_args_post(&mut self, ctx: &mut impl WriteCtx<DataCategory>, value: &Option<String>, state: HeapToken, args: WriteStringArgs) -> Result<()> {
         self.write_string_optional_new_post(ctx, value.as_deref(), args, state)
     }
 }
