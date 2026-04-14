@@ -219,10 +219,11 @@ pub struct ElfWriteDomain {
     pub string_map: HashMap<(HeapID, Cow<'static, str>), HeapToken>,
     pub symbol_declarations: Vec<SymbolDeclaration>,
     pub relocations: Vec<RelDeclaration>,
-    pub string_dedup_size: u64,
     pub apply_debug_relocations: bool,
     
+    // does it even perform deduplication for non-Strings categories?
     prev_string_lengths: [usize; DataCategory::SIZE],
+    string_counts: [usize; DataCategory::SIZE],
 }
 
 impl EndianSpecific for ElfWriteDomain {
@@ -232,14 +233,14 @@ impl EndianSpecific for ElfWriteDomain {
 }
 
 impl ElfWriteDomain {
-    pub fn new(string_dedup_size: u64, apply_debug_relocations: bool) -> Self {
+    pub fn new(apply_debug_relocations: bool) -> Self {
         Self {
             string_map: HashMap::new(),
             symbol_declarations: Vec::new(),
             relocations: Vec::new(),
-            string_dedup_size,
             apply_debug_relocations,
             prev_string_lengths: [0; _],
+            string_counts: [0; _],
         }
     }
     
@@ -261,9 +262,8 @@ impl ElfWriteDomain {
         let category = args.category.unwrap_or(*ctx.default_category());
         let heap_id = ctx.heap_id_of(&category);
         
-        let heap_size = ctx.heap_mut(category).total_size()?;
-        
-        let existing_token = if heap_size < self.string_dedup_size { 
+        // this 1000 string limit is really funny to me
+        let existing_token = if self.string_counts[category as usize] <= 1000 { 
             self.string_map.get(&(heap_id, Cow::Borrowed(value))).copied()
         } else {
             None
@@ -274,6 +274,7 @@ impl ElfWriteDomain {
             return Ok(());
         }
         
+        self.string_counts[category as usize] += 1;
         let alignment = if self.prev_string_lengths[category as usize] > 2 || value.len() > 1 { 4 } else { 0 };
         self.prev_string_lengths[category as usize] = value.len();
         

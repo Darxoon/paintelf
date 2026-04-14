@@ -3,7 +3,7 @@ use std::io::SeekFrom;
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
-use vivibin::{CanRead, CanReadVec, CanWrite, Readable, Reader, Writable, scoped_reader_pos};
+use vivibin::{CanRead, CanReadVec, CanWrite, ReadDomainExt, Readable, Reader, Writable, scoped_reader_pos};
 
 use crate::{
     SymbolName,
@@ -56,12 +56,8 @@ pub struct DisposArea {
 
 impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer> + CanReadVec> Readable<D> for DisposArea {
     fn from_reader_unboxed<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
-        // TODO: provide actual mechanism for this
-        let ptr: Pointer = domain.read(reader)?;
-        scoped_reader_pos!(reader);
-        reader.seek(SeekFrom::Start(ptr.into()))?;
-        
         let id: String = domain.read(reader)?;
+        // TODO: provide actual mechanism for this
         let map_npcs: Vec<DisposNpc> = read_dispos_item_vec(reader, domain)?;
         let map_mobjs: Vec<DisposMobj> = read_dispos_item_vec(reader, domain)?;
         let map_items: Vec<DisposItem> = read_dispos_item_vec(reader, domain)?;
@@ -71,6 +67,12 @@ impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer> + CanReadVe
             map_npcs,
             map_mobjs,
             map_items,
+        })
+    }
+    
+    fn from_reader<R: Reader>(reader: &mut R, domain: D) -> Result<Self> {
+        domain.read_box(reader, |reader| {
+            Self::from_reader_unboxed(reader, domain)
         })
     }
 }

@@ -93,7 +93,7 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
     
     let (mut symbol_declarations, mut relocations) = match data.heap_category_type() {
         ElfCategoryType::Unit => {
-            let mut domain = ElfWriteDomain::new(data.string_dedup_size(), apply_debug_relocations);
+            let mut domain = ElfWriteDomain::new(apply_debug_relocations);
             let mut ctx: WriteCtxImpl<DataCategory> = ElfWriteDomain::new_ctx(DataCategory::Rodata);
             match data {
                 FileData::Maplink(maplink_areas) => {
@@ -131,7 +131,7 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
             (domain.symbol_declarations, domain.relocations)
         },
         ElfCategoryType::Data => {
-            let mut domain = ElfWriteDomain::new(data.string_dedup_size(), apply_debug_relocations);
+            let mut domain = ElfWriteDomain::new(apply_debug_relocations);
             let mut ctx: WriteCtxImpl<DataCategory> = ElfWriteDomain::new_ctx(DataCategory::Data);
             match data {
                 FileData::Lct(lcts) => {
