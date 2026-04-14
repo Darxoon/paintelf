@@ -102,7 +102,8 @@ impl FileData {
     // this is so confusing
     pub fn string_dedup_size(&self) -> u64 {
         match self {
-            FileData::Maplink(_) => 0xc32c,
+            // TODO: what if this isn't a byte length but just number of strings
+            FileData::Maplink(_) => 0x5bd0,
             FileData::MapId(_) => 0x487c,
             // ?
             _ => 0xc32c,

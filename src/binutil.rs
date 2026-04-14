@@ -176,6 +176,10 @@ pub enum DataCategory {
     Strings,
 }
 
+impl DataCategory {
+    pub const SIZE: usize = 3;
+}
+
 impl HeapCategory for DataCategory {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -232,13 +236,13 @@ pub struct NewWriteNullTermiantedSliceArgs {
 
 #[derive(Clone)]
 pub struct ElfWriteDomain {
-    pub string_map: HashMap<(Option<HeapID>, Cow<'static, str>), HeapToken>,
+    pub string_map: HashMap<(HeapID, Cow<'static, str>), HeapToken>,
     pub symbol_declarations: Vec<SymbolDeclaration>,
     pub relocations: Vec<RelDeclaration>,
     pub string_dedup_size: u64,
     pub apply_debug_relocations: bool,
     
-    prev_string_len: usize,
+    prev_string_lengths: [usize; DataCategory::SIZE],
 }
 
 impl EndianSpecific for ElfWriteDomain {
@@ -255,7 +259,7 @@ impl ElfWriteDomain {
             relocations: Vec::new(),
             string_dedup_size,
             apply_debug_relocations,
-            prev_string_len: 0,
+            prev_string_lengths: [0; _],
         }
     }
     
@@ -272,7 +276,7 @@ impl ElfWriteDomain {
         // Search for if this string has already been written before
         // TODO: account for substrings (use crate memchr?)
         let existing_token = if args.deduplicate && ctx.position()? < self.string_dedup_size { 
-            self.string_map.get(&(None, Cow::from(value))).copied()
+            self.string_map.get(&(HeapID(0), Cow::from(value))).copied()
         } else {
             None
         };
@@ -282,10 +286,10 @@ impl ElfWriteDomain {
             return Ok(());
         }
         
-        let alignment = (self.prev_string_len > 2 || value.len() > 1).then_some(4).unwrap_or_default();
+        let alignment = (self.prev_string_lengths[0] > 2 || value.len() > 1).then_some(4).unwrap_or_default();
         
         if args.deduplicate {
-            self.prev_string_len = value.len();
+            self.prev_string_lengths[0] = value.len();
         }
         
         let mut name_size: usize = 0;
@@ -306,7 +310,7 @@ impl ElfWriteDomain {
         });
         
         if args.deduplicate {
-            self.string_map.insert((None, Cow::from(value.to_owned())), new_token);
+            self.string_map.insert((HeapID(0), Cow::from(value.to_owned())), new_token);
         }
         
         ctx.write_token::<4>(new_token)?;
@@ -328,12 +332,12 @@ impl ElfWriteDomain {
     }
     
     pub fn write_string_new_post(&mut self, ctx: &mut impl WriteCtx<DataCategory>, value: &str, args: NewWriteStringArgs, base: HeapToken) -> Result<()> {
-        let heap_id = args.category.map(|cat| ctx.heap_id_of(&cat));
-        let heap = ctx.heap_mut(args.category.unwrap_or(*ctx.default_category()));
+        let category = args.category.unwrap_or(*ctx.default_category());
+        let heap_id = ctx.heap_id_of(&category);
         
-        let size = heap.total_size()?;
+        let heap_size = ctx.heap_mut(category).total_size()?;
         
-        let existing_token = if size < self.string_dedup_size { 
+        let existing_token = if heap_size < self.string_dedup_size { 
             self.string_map.get(&(heap_id, Cow::Borrowed(value))).copied()
         } else {
             None
@@ -344,8 +348,8 @@ impl ElfWriteDomain {
             return Ok(());
         }
         
-        let alignment = (self.prev_string_len > 2 || value.len() > 1).then_some(4).unwrap_or_default();
-        self.prev_string_len = value.len();
+        let alignment = if self.prev_string_lengths[category as usize] > 2 || value.len() > 1 { 4 } else { 0 };
+        self.prev_string_lengths[category as usize] = value.len();
         
         ctx.allocate_next_block_aligned(args.category, alignment, false, |ctx| {
             let start_pos = ctx.position()? as usize;

@@ -7,7 +7,7 @@ use vivibin::{Readable, Reader, Writable, WriteCtx};
 
 use crate::{
     SymbolName,
-    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, WriteSliceArgs, WriteStringArgs},
+    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, NewWriteSliceArgs, NewWriteStringArgs},
     formats::FileData,
 };
 
@@ -31,29 +31,37 @@ pub fn write_maplink(ctx: &mut impl WriteCtx<DataCategory>, domain: &mut ElfWrit
         (areas.len() as u32).to_writer(ctx, domain)
     })?;
     
+    let mut states = Vec::with_capacity(areas.len());
+    
     domain.write_symbol(ctx, "datas__Q3_4data3fld7maplink", |domain, ctx| {
         for area in areas {
-            area.to_writer(ctx, domain)?;
+            states.push(area.to_writer(ctx, domain)?);
         }
         Ok(())
     })?;
+    
+    for (area, state) in areas.iter().zip(states) {
+        area.to_writer_post(ctx, domain, state)?;
+    }
     
     Ok(())
 }
 
 #[derive(Clone, Debug, Readable, Writable, Serialize, Deserialize)]
+#[new_serialization]
 pub struct MaplinkArea {
     #[require_domain]
-    #[write_args(WriteStringArgs { deduplicate: false })]
+    #[write_args(NewWriteStringArgs { category: None })]
     pub map_name: String,
     
-    #[write_args(WriteSliceArgs {
+    #[write_args(NewWriteSliceArgs {
         symbol_name: Some(SymbolName::InternalNamed(self.map_name.clone())),
     })]
     pub links: Vec<Link>,
 }
 
 #[derive(Clone, Debug, Readable, Writable, Serialize, Deserialize)]
+#[new_serialization]
 pub struct Link {
     #[require_domain]
     pub id: String,
