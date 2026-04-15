@@ -9,7 +9,7 @@ use anyhow::{Result, anyhow};
 use binrw::BinWrite;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
-use vivibin::{HeapResolver, HeapToken, WriteCtx, WriteCtxImpl, WriteDomainExt, util::HashMap};
+use vivibin::{HeapResolver, HeapToken, WriteCtxBase, WriteDomainExt, util::HashMap};
 
 use crate::{
     binutil::ElfCategoryType,
@@ -94,7 +94,8 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
     let (mut symbol_declarations, mut relocations) = match data.heap_category_type() {
         ElfCategoryType::Unit => {
             let mut domain = ElfWriteDomain::new(apply_debug_relocations);
-            let mut ctx: WriteCtxImpl<DataCategory> = ElfWriteDomain::new_ctx(DataCategory::Rodata);
+            let mut base: WriteCtxBase<DataCategory> = ElfWriteDomain::new_ctx_base(DataCategory::Rodata);
+            let mut ctx = base.ctx();
             match data {
                 FileData::Maplink(maplink_areas) => {
                     write_maplink(&mut ctx, &mut domain, maplink_areas)?;
@@ -132,7 +133,8 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
         },
         ElfCategoryType::Data => {
             let mut domain = ElfWriteDomain::new(apply_debug_relocations);
-            let mut ctx: WriteCtxImpl<DataCategory> = ElfWriteDomain::new_ctx(DataCategory::Data);
+            let mut base: WriteCtxBase<DataCategory> = ElfWriteDomain::new_ctx_base(DataCategory::Data);
+            let mut ctx = base.ctx();
             match data {
                 FileData::Lct(lcts) => {
                     write_lct(&mut ctx, &mut domain, lcts)?;

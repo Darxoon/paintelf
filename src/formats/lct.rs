@@ -28,7 +28,7 @@ pub fn read_lct(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<FileD
     Ok(FileData::Lct(areas))
 }
 
-pub fn write_lct(ctx: &mut impl WriteCtx<DataCategory>, domain: &mut ElfWriteDomain, lcts: &[AreaLct]) -> Result<()> {
+pub fn write_lct(ctx: &mut WriteCtx<DataCategory>, domain: &mut ElfWriteDomain, lcts: &[AreaLct]) -> Result<()> {
     domain.write_symbol(ctx, "all_lctAnimeDataTblLen__Q2_4data3lct", |domain, ctx| {
         (lcts.len() as u32 + 1).to_writer(ctx, domain)
     })?;
@@ -63,7 +63,7 @@ where
     type UnboxedPostState = ();
     type PostState = ();
     
-    fn to_writer_unboxed(&self, ctx: &mut impl WriteCtx<C>, domain: &mut D) -> Result<()> {
+    fn to_writer_unboxed(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<()> {
         domain.write(ctx, &self.area_id)?;
         domain.write_slice_args_fallback(ctx, &self.maps, WriteNullTermiantedSliceArgs {
             symbol_name: None,
@@ -72,13 +72,13 @@ where
         Ok(())
     }
     
-    fn to_writer(&self, ctx: &mut impl WriteCtx<C>, domain: &mut D) -> Result<()> {
+    fn to_writer(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<()> {
         domain.write_box_of(ctx, |domain, ctx| {
             self.to_writer_unboxed(ctx, domain)
         })
     }
     
-    fn to_writer_post(&self, ctx: &mut impl WriteCtx<C>, domain: &mut D, state: Self::PostState) -> Result<()> {
+    fn to_writer_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::PostState) -> Result<()> {
         self.to_writer_unboxed_post(ctx, domain, state)
     }
 }
@@ -95,13 +95,13 @@ impl<C: HeapCategory, D: CanWrite<C, String> + CanWriteBox<C> + CanWriteSlice<C>
     type UnboxedPostState = ();
     type PostState = ();
     
-    fn to_writer_unboxed(&self, ctx: &mut impl WriteCtx<C>, domain: &mut D) -> Result<()> {
+    fn to_writer_unboxed(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<()> {
         domain.write(ctx, &self.map_id)?;
         domain.write_slice_fallback(ctx, &self.lcts)?;
         Ok(())
     }
     
-    fn to_writer(&self, ctx: &mut impl WriteCtx<C>, domain: &mut D) -> Result<()> {
+    fn to_writer(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<()> {
         // TODO: WriteNullTermiantedSliceArgs does not interact well with boxing
         if self.map_id.is_empty() && self.lcts.is_empty() {
             0u32.to_writer(ctx, domain)
@@ -112,7 +112,7 @@ impl<C: HeapCategory, D: CanWrite<C, String> + CanWriteBox<C> + CanWriteSlice<C>
         }
     }
     
-    fn to_writer_post(&self, ctx: &mut impl WriteCtx<C>, domain: &mut D, state: Self::PostState) -> Result<()> {
+    fn to_writer_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::PostState) -> Result<()> {
         self.to_writer_unboxed_post(ctx, domain, state)
     }
 }

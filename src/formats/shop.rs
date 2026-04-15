@@ -27,7 +27,7 @@ pub fn read_shops(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<Fil
     Ok(FileData::Shop(shop_list))
 }
 
-pub fn write_shops(ctx: &mut impl WriteCtx<DataCategory>, domain: &mut ElfWriteDomain, shops: &[Shop]) -> Result<()> {
+pub fn write_shops(ctx: &mut WriteCtx<DataCategory>, domain: &mut ElfWriteDomain, shops: &[Shop]) -> Result<()> {
     let mut states = Vec::new();
     
     domain.write_symbol(ctx, "shopList__Q2_4data4shop", |domain, ctx| {
