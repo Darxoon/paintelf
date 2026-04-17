@@ -9,7 +9,7 @@ use vivibin::{
 };
 
 use crate::{
-    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, WriteNullTermiantedSliceArgs},
+    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, WriteNullTerminatedSliceArgs},
     formats::FileData,
 };
 
@@ -58,14 +58,14 @@ where
     D: CanWrite<C, String>
         + CanWriteBox<C>
         + CanWriteSlice<C>
-        + CanWriteSliceWithArgs<C, MapLct, WriteNullTermiantedSliceArgs>,
+        + CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>,
 {
     type UnboxedPostState = ();
     type PostState = ();
     
     fn to_writer_unboxed(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<()> {
         domain.write(ctx, &self.area_id)?;
-        domain.write_slice_args_fallback(ctx, &self.maps, WriteNullTermiantedSliceArgs {
+        domain.write_slice_args_fallback(ctx, &self.maps, WriteNullTerminatedSliceArgs {
             symbol_name: None,
             write_length: true,
         })?;

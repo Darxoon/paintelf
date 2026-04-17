@@ -3,13 +3,12 @@ use std::io::SeekFrom;
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
-use vivibin::{CanRead, CanWriteWithArgs, Readable, Reader, Writable, WriteCtx, scoped_reader_pos};
+use vivibin::{CanRead, CanWrite, Readable, Reader, Writable, WriteCtx};
 
 use crate::{
     SymbolName,
-    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, WriteNullTermiantedSliceArgs, WriteStringArgs},
+    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, ReadNullTerminatedVecArgs, WriteNullTerminatedSliceArgs, WriteStringArgs},
     formats::FileData,
-    util::pointer::Pointer,
 };
 
 pub fn read_shops(reader: &mut impl Reader, domain: ElfReadDomain) -> Result<FileData> {
@@ -47,49 +46,25 @@ pub fn write_shops(ctx: &mut WriteCtx<DataCategory>, domain: &mut ElfWriteDomain
     Ok(())
 }
 
-#[derive(Clone, Debug, Writable, Deserialize, Serialize)]
-#[extra_write_domain_deps(CanWriteWithArgs<Cat, Option<String>, WriteStringArgs>)]
+#[derive(Clone, Debug, Readable, Writable, Deserialize, Serialize)]
+#[extra_read_domain_deps(CanRead<Option<String>>)]
+#[extra_write_domain_deps(CanWrite<Cat, Option<String>>)]
 pub struct Shop {
     #[require_domain]
     #[write_args(WriteStringArgs { category: None })]
     pub shop_id: String,
     
-    #[write_args(WriteNullTermiantedSliceArgs {
+    #[read_args(ReadNullTerminatedVecArgs)]
+    #[write_args(WriteNullTerminatedSliceArgs {
         symbol_name: Some(SymbolName::Internal('s')),
         write_length: false,
     })]
     pub items: Vec<SoldItem>,
 }
 
-// TODO: vivibin can't pass along SoldItem's Option<String> dependency
-impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer>> Readable<D> for Shop {
-    fn from_reader_unboxed<R: vivibin::Reader>(reader: &mut R, domain: D) -> Result<Self> {
-        let shop_id: String = domain.read(reader)?;
-        let items_ptr: Pointer = domain.read(reader)?;
-        
-        // TODO: provide abstraction for this
-        scoped_reader_pos!(reader);
-        reader.seek(SeekFrom::Start(items_ptr.into()))?;
-        let mut items = Vec::new();
-        loop {
-            let value = SoldItem::from_reader(reader, domain)?;
-            
-            if value == SoldItem::default() {
-                break;
-            }
-            
-            items.push(value);
-        }
-        
-        Ok(Self { shop_id, items })
-    }
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Eq, Readable, Writable, Deserialize, Serialize)]
 pub struct SoldItem {
     #[require_domain]
-    #[write_args(WriteStringArgs::default())]
     pub item_id: Option<String>,
-    #[write_args(WriteStringArgs::default())]
     pub requirement: Option<String>,
 }

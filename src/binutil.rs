@@ -4,9 +4,9 @@ use anyhow::{Result, anyhow, bail, ensure};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use vivibin::{
-    CanRead, CanReadVec, CanWrite, CanWriteBox, CanWriteSlice, CanWriteSliceWithArgs, CanWriteWithArgs,
-    EndianSpecific, Endianness, HeapCategory, HeapID, HeapToken, ReadDomain, Readable, Reader, Writable,
-    WriteCtx, WriteDomain, Writer, util::HashMap,
+    CanRead, CanReadVec, CanReadVecWithArgs, CanWrite, CanWriteBox, CanWriteSlice, CanWriteSliceWithArgs,
+    CanWriteWithArgs, EndianSpecific, Endianness, HeapCategory, HeapID, HeapToken, ReadDomain, Readable,
+    Reader, Writable, WriteCtx, WriteDomain, Writer, util::HashMap,
 };
 
 use crate::{
@@ -17,6 +17,9 @@ use crate::{
 };
 
 // deserializing
+#[derive(Clone, Debug, Default)]
+pub struct ReadNullTerminatedVecArgs;
+
 #[derive(Clone, Copy)]
 pub struct ElfReadDomain<'a> {
     rodata_section: &'a [u8],
@@ -90,6 +93,30 @@ impl<'a> ElfReadDomain<'a> {
         Ok(values)
     }
     
+    pub fn read_null_terminated_vec<T: Default + PartialEq + 'static, R: Reader>(self, reader: &mut R, read_content: impl Fn(&mut R) -> Result<T>) -> Result<Vec<T>> {
+        let ptr: Option<Pointer> = self.read_pointer_optional(reader)?;
+        
+        let Some(ptr) = ptr else {
+            return Ok(Vec::new());
+        };
+        
+        scoped_reader_pos!(reader);
+        reader.seek(SeekFrom::Start(ptr.into()))?;
+        
+        let mut values = Vec::new();
+        loop {
+            let value = read_content(reader)?;
+            
+            if value == T::default() {
+                break;
+            }
+            
+            values.push(value);
+        }
+        
+        Ok(values)
+    }
+    
     pub fn read_pointer(&self, reader: &mut impl Reader) -> Result<Pointer> {
         let offset = Pointer::current(reader)?;
         let optional_pointer = self.read_pointer_optional(reader)?;
@@ -143,6 +170,12 @@ impl ReadDomain for ElfReadDomain<'_> {
 impl CanReadVec for ElfReadDomain<'_> {
     fn read_std_vec_of<T: 'static, R: Reader>(self, reader: &mut R, read_content: impl Fn(&mut R) -> Result<T>) -> Result<Vec<T>> {
         self.read_vec(reader, read_content)
+    }
+}
+
+impl<T: Default + PartialEq + 'static> CanReadVecWithArgs<T, ReadNullTerminatedVecArgs> for ElfReadDomain<'_> {
+    fn read_std_vec_args_of<R: Reader>(self, reader: &mut R, _: ReadNullTerminatedVecArgs, read_content: impl Fn(&mut R) -> Result<T>) -> Result<Vec<T>> {
+        self.read_null_terminated_vec(reader, read_content)
     }
 }
 
@@ -209,7 +242,7 @@ pub struct WriteSliceArgs {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct WriteNullTermiantedSliceArgs {
+pub struct WriteNullTerminatedSliceArgs {
     pub symbol_name: Option<SymbolName>,
     pub write_length: bool,
 }
@@ -381,7 +414,7 @@ impl ElfWriteDomain {
         &mut self,
         ctx: &mut WriteCtx<DataCategory>,
         values: &[T],
-        args: WriteNullTermiantedSliceArgs,
+        args: WriteNullTerminatedSliceArgs,
     ) -> Result<HeapToken> {
         let current_token = ctx.heap_token_at_current_pos()?;
         0u32.to_writer(ctx, self)?;
@@ -397,7 +430,7 @@ impl ElfWriteDomain {
         &mut self,
         ctx: &mut WriteCtx<DataCategory>,
         values: &[T],
-        args: WriteNullTermiantedSliceArgs,
+        args: WriteNullTerminatedSliceArgs,
         base: HeapToken,
         write_content: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T) -> Result<P>,
         write_content_post: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T, P) -> Result<()>,
@@ -550,14 +583,14 @@ impl<T: 'static> CanWriteSliceWithArgs<DataCategory, T, WriteSliceArgs> for ElfW
     }
 }
 
-impl<T: Default + 'static> CanWriteSliceWithArgs<DataCategory, T, WriteNullTermiantedSliceArgs> for ElfWriteDomain {
+impl<T: Default + 'static> CanWriteSliceWithArgs<DataCategory, T, WriteNullTerminatedSliceArgs> for ElfWriteDomain {
     type PostState = HeapToken;
     
     fn write_slice_args_of<P>(
         &mut self,
         ctx: &mut WriteCtx<DataCategory>,
         values: &[T],
-        args: WriteNullTermiantedSliceArgs,
+        args: WriteNullTerminatedSliceArgs,
         _write_content: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T) -> Result<P>,
         _write_content_post: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T, P) -> Result<()>,
     ) -> Result<HeapToken> {
@@ -569,7 +602,7 @@ impl<T: Default + 'static> CanWriteSliceWithArgs<DataCategory, T, WriteNullTermi
         ctx: &mut WriteCtx<DataCategory>,
         values: &[T],
         state: HeapToken,
-        args: WriteNullTermiantedSliceArgs,
+        args: WriteNullTerminatedSliceArgs,
         write_content: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T) -> Result<P>,
         write_content_post: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T, P) -> Result<()>,
     ) -> Result<()> {
