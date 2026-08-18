@@ -4,8 +4,7 @@ use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
-    CanWrite, CanWriteBox, CanWriteSlice, CanWriteSliceWithArgs, HeapCategory, Readable, Reader,
-    Writable, WriteCtx, WriteSliceFallbackExt, WriteSliceWithArgsFallbackExt,
+    CanWrite, CanWriteBox, CanWriteSlice, CanWriteSliceWithArgs, HeapCategory, HeapToken, Readable, Reader, Writable, WriteCtx, WriteSliceFallbackExt, WriteSliceWithArgsFallbackExt,
 };
 
 use crate::{
@@ -60,26 +59,39 @@ where
         + CanWriteSlice<C>
         + CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>,
 {
-    type UnboxedPostState = ();
-    type PostState = ();
+    type UnboxedPostState = <D as CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>>::PostState;
+    type PostState = HeapToken;
     
-    fn to_writer_unboxed(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<()> {
+    fn to_writer_unboxed(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<Self::UnboxedPostState> {
         domain.write(ctx, &self.area_id)?;
         domain.write_slice_args_fallback(ctx, &self.maps, WriteNullTerminatedSliceArgs {
             symbol_name: None,
             write_length: true,
-        })?;
-        Ok(())
-    }
-    
-    fn to_writer(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<()> {
-        domain.write_box_of(ctx, |domain, ctx| {
-            self.to_writer_unboxed(ctx, domain)
         })
     }
     
-    fn to_writer_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::PostState) -> Result<()> {
-        self.to_writer_unboxed_post(ctx, domain, state)
+    fn to_writer_unboxed_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::UnboxedPostState) -> Result<()> {
+        domain.write_slice_args_post_fallback(ctx, &self.maps, WriteNullTerminatedSliceArgs {
+            symbol_name: None,
+            write_length: true,
+        }, state)
+    }
+    
+    fn to_writer(&self, ctx: &mut WriteCtx<C>, _domain: &mut D) -> Result<HeapToken> {
+        let token = ctx.heap_token_at_current_pos()?;
+        Ok(token)
+    }
+    
+    fn to_writer_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: HeapToken) -> Result<()> {
+        let current_token = ctx.heap_token_at_current_pos()?;
+        ctx.add_relocation(state, current_token)?;
+        
+        // issue: these need to be separate
+        // writes arealct
+        let state = self.to_writer_unboxed(ctx, domain)?;
+        // writes maplcts
+        self.to_writer_unboxed_post(ctx, domain, state)?;
+        Ok(())
     }
 }
 
