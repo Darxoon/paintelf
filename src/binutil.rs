@@ -334,20 +334,28 @@ impl ElfWriteDomain {
         Ok(())
     }
     
-    // TODO: legacy serialization
-    pub fn write_box(
-        &mut self, ctx: &mut WriteCtx<DataCategory>, args: Option<SymbolName>,
-        write_content: impl FnOnce(&mut Self, &mut WriteCtx<DataCategory>) -> Result<()>,
+    pub fn write_box(&mut self, ctx: &mut WriteCtx<DataCategory>) -> Result<HeapToken> {
+        let token = ctx.heap_token_at_current_pos()?;
+        0u32.to_writer(ctx, self)?;
+        Ok(token)
+    }
+    
+    pub fn write_box_post<P>(
+        &mut self,
+        ctx: &mut WriteCtx<DataCategory>,
+        args: Option<SymbolName>,
+        base: HeapToken,
+        write_content: impl FnOnce(&mut Self, &mut WriteCtx<DataCategory>) -> Result<P>,
+        write_content_post: impl FnOnce(&mut Self, &mut WriteCtx<DataCategory>, P) -> Result<()>,
     ) -> Result<()> {
-        let mut links_size: usize = 0;
-        let token = ctx.allocate_next_block_aligned(None, 4, false, |ctx| {
-            let start_pos = ctx.position() as usize;
-            write_content(self, ctx)?;
-            links_size = ctx.position() as usize - start_pos;
-            Ok(())
-        })?;
+        let token = ctx.heap_token_at_current_pos()?;
+        ctx.add_relocation(base, token)?;
         
-        ctx.write_token::<4>(token)?;
+        let start_pos = ctx.position() as usize;
+        let state = write_content(self, ctx)?;
+        let links_size = ctx.position() as usize - start_pos;
+        
+        write_content_post(self, ctx, state)?;
         
         if let Some(name) = args {
             self.put_symbol(SymbolDeclaration {
@@ -519,13 +527,26 @@ impl WriteDomain for ElfWriteDomain {
 }
 
 impl CanWriteBox<DataCategory> for ElfWriteDomain {
-    fn write_box_of(
+    type PostState = HeapToken;
+
+    fn write_box_of<P>(
         &mut self,
-        ctx: &mut WriteCtx<DataCategory>,
-        write_content: impl FnOnce(&mut Self, &mut WriteCtx<DataCategory>) -> Result<()>
+        ctx: &mut WriteCtx<'_, DataCategory>,
+        _write_content: impl FnOnce(&mut Self, &mut WriteCtx<'_, DataCategory>) -> Result<P>,
+        _write_content_post: impl FnOnce(&mut Self, &mut WriteCtx<'_, DataCategory>, P) -> Result<()>,
+    ) -> Result<Self::PostState> {
+        self.write_box(ctx)
+    }
+
+    fn write_box_of_post<P>(
+        &mut self,
+        ctx: &mut WriteCtx<'_, DataCategory>,
+        state: Self::PostState,
+        write_content: impl FnOnce(&mut Self, &mut WriteCtx<'_, DataCategory>) -> Result<P>,
+        write_content_post: impl FnOnce(&mut Self, &mut WriteCtx<'_, DataCategory>, P) -> Result<()>,
     ) -> Result<()> {
         // hardcoding 'l' to make lct work is quite a hack
-        self.write_box(ctx, Some(SymbolName::Internal('l')), write_content)
+        self.write_box_post(ctx, Some(SymbolName::Internal('l')), state, write_content, write_content_post)
     }
 }
 

@@ -1,4 +1,4 @@
-use std::io::SeekFrom;
+use std::{fmt::Debug, io::SeekFrom};
 
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
@@ -32,13 +32,19 @@ pub fn write_lct(ctx: &mut WriteCtx<DataCategory>, domain: &mut ElfWriteDomain, 
         (lcts.len() as u32 + 1).to_writer(ctx, domain)
     })?;
     
+    let mut states = Vec::new();
+    
     domain.write_symbol(ctx, "all_lctAnimeDataTbl__Q2_4data3lct", |domain, ctx| {
         for lct in lcts {
-            lct.to_writer(ctx, domain)?;
+            states.push(lct.to_writer(ctx, domain)?);
         }
         0u32.to_writer(ctx, domain)?;
         Ok(())
     })?;
+    
+    for (lct, state) in lcts.iter().zip(states) {
+        lct.to_writer_post(ctx, domain, state)?;
+    }
     
     Ok(())
 }
@@ -58,41 +64,62 @@ where
         + CanWriteBox<C>
         + CanWriteSlice<C>
         + CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>,
+    <D as CanWrite<C, String>>::PostState: Debug,
 {
-    type UnboxedPostState = <D as CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>>::PostState;
+    type UnboxedPostState = Area__PostState<C, D>;
     type PostState = HeapToken;
     
     fn to_writer_unboxed(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<Self::UnboxedPostState> {
-        domain.write(ctx, &self.area_id)?;
-        domain.write_slice_args_fallback(ctx, &self.maps, WriteNullTerminatedSliceArgs {
+        let area_id = domain.write(ctx, &self.area_id)?;
+        let maps = domain.write_slice_args_fallback(ctx, &self.maps, WriteNullTerminatedSliceArgs {
             symbol_name: None,
             write_length: true,
+        })?;
+        Ok(Area__PostState {
+            area_id,
+            maps,
         })
     }
     
     fn to_writer_unboxed_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::UnboxedPostState) -> Result<()> {
+        println!("writing id {} at {:?}", self.area_id, state.area_id);
+        domain.write_post(ctx, &self.area_id, state.area_id)?;
         domain.write_slice_args_post_fallback(ctx, &self.maps, WriteNullTerminatedSliceArgs {
             symbol_name: None,
             write_length: true,
-        }, state)
+        }, state.maps)?;
+        Ok(())
     }
     
-    fn to_writer(&self, ctx: &mut WriteCtx<C>, _domain: &mut D) -> Result<HeapToken> {
+    fn to_writer(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<HeapToken> {
         let token = ctx.heap_token_at_current_pos()?;
+        0u32.to_writer(ctx, domain)?;
         Ok(token)
     }
     
-    fn to_writer_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: HeapToken) -> Result<()> {
-        let current_token = ctx.heap_token_at_current_pos()?;
-        ctx.add_relocation(state, current_token)?;
+    fn to_writer_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::PostState) -> Result<()> {
+        let token = ctx.heap_token_at_current_pos()?;
+        ctx.add_relocation(state, token)?;
         
-        // issue: these need to be separate
-        // writes arealct
+        // TODO: figure out how to make the layout more flexible here
         let state = self.to_writer_unboxed(ctx, domain)?;
-        // writes maplcts
         self.to_writer_unboxed_post(ctx, domain, state)?;
         Ok(())
     }
+}
+
+#[allow(non_camel_case_types)]
+pub struct Area__PostState<C, D>
+where
+    C: HeapCategory,
+    D: CanWrite<C, String>
+        + CanWriteBox<C>
+        + CanWriteSlice<C>
+        + CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>,
+    <D as CanWrite<C, String>>::PostState: Debug,
+{
+    pub area_id: <D as CanWrite<C, String>>::PostState,
+    pub maps: <D as CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>>::PostState,
 }
 
 #[derive(Clone, Debug, Default, Readable, Deserialize, Serialize)]
@@ -104,29 +131,49 @@ pub struct MapLct {
 }
 
 impl<C: HeapCategory, D: CanWrite<C, String> + CanWriteBox<C> + CanWriteSlice<C>> Writable<C, D> for MapLct {
-    type UnboxedPostState = ();
-    type PostState = ();
+    type UnboxedPostState = MapLct__PostState<C, D>;
+    type PostState = HeapToken;
     
-    fn to_writer_unboxed(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<()> {
-        domain.write(ctx, &self.map_id)?;
-        domain.write_slice_fallback(ctx, &self.lcts)?;
+    fn to_writer_unboxed(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<Self::UnboxedPostState> {
+        let map_id = domain.write(ctx, &self.map_id)?;
+        let lcts = domain.write_slice_fallback(ctx, &self.lcts)?;
+        Ok(MapLct__PostState {
+            map_id,
+            lcts,
+        })
+    }
+    
+    fn to_writer_unboxed_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::UnboxedPostState) -> Result<()> {
+        domain.write_post(ctx, &self.map_id, state.map_id)?;
+        domain.write_slice_post_fallback(ctx, &self.lcts, state.lcts)?;
         Ok(())
     }
     
-    fn to_writer(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<()> {
-        // TODO: WriteNullTermiantedSliceArgs does not interact well with boxing
-        if self.map_id.is_empty() && self.lcts.is_empty() {
-            0u32.to_writer(ctx, domain)
-        } else {
-            domain.write_box_of(ctx, |domain, ctx| {
-                self.to_writer_unboxed(ctx, domain)
-            })
-        }
+    fn to_writer(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<HeapToken> {
+        let token = ctx.heap_token_at_current_pos()?;
+        0u32.to_writer(ctx, domain)?;
+        Ok(token)
     }
     
     fn to_writer_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::PostState) -> Result<()> {
-        self.to_writer_unboxed_post(ctx, domain, state)
+        // TODO: WriteNullTermiantedSliceArgs does not interact well with boxing
+        if self.map_id.is_empty() && self.lcts.is_empty() {
+            return Ok(());
+        }
+        
+        let token = ctx.heap_token_at_current_pos()?;
+        ctx.add_relocation(state, token)?;
+        
+        let state = self.to_writer_unboxed(ctx, domain)?;
+        self.to_writer_unboxed_post(ctx, domain, state)?;
+        Ok(())
     }
+}
+
+#[allow(non_camel_case_types)]
+pub struct MapLct__PostState<C: HeapCategory, D: CanWrite<C, String> + CanWriteBox<C> + CanWriteSlice<C>> {
+    pub map_id: <D as CanWrite<C, String>>::PostState,
+    pub lcts: <D as CanWriteSlice<C>>::PostState,
 }
 
 #[derive(Clone, Debug, Readable, Writable, Deserialize, Serialize)]
