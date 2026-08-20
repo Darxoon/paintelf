@@ -7,7 +7,7 @@ use vivibin::{CanRead, CanReadVec, CanWrite, ReadDomainExt, Readable, Reader, Wr
 
 use crate::{
     SymbolName,
-    binutil::{ElfReadDomain, WriteSliceArgs, WriteStringArgs},
+    binutil::{ElfReadDomain, InlineString, WriteSliceArgs},
     formats::FileData,
     util::pointer::Pointer,
 };
@@ -83,7 +83,7 @@ impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer> + CanReadVe
 #[extra_write_domain_deps(CanWrite<Cat, Option<String>>)]
 pub struct DisposNpc {
     #[require_domain]
-    #[write_args(WriteStringArgs { category: None })]
+    #[write_args(InlineString)]
     pub map_id: String,
     
     #[write_args(WriteSliceArgs {
@@ -182,7 +182,7 @@ pub struct Npc {
 #[extra_write_domain_deps(CanWrite<Cat, Option<String>>)]
 pub struct DisposMobj {
     #[require_domain]
-    #[write_args(WriteStringArgs { category: None })]
+    #[write_args(InlineString)]
     pub map_id: String,
     
     #[write_args(WriteSliceArgs {
@@ -229,7 +229,7 @@ pub struct Mobj {
 #[extra_read_domain_deps(CanRead<Option<String>>)]
 pub struct DisposItem {
     #[require_domain]
-    #[write_args(WriteStringArgs { category: None })]
+    #[write_args(InlineString)]
     pub map_id: String,
     
     #[write_args(WriteSliceArgs {

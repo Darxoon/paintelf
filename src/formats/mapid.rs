@@ -7,7 +7,7 @@ use vivibin::{Readable, Reader, Writable, WriteCtx};
 
 use crate::{
     SymbolName,
-    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, WriteSliceArgs, WriteStringArgs},
+    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, InlineString, WriteSliceArgs},
     formats::FileData,
 };
 
@@ -50,7 +50,7 @@ pub fn write_mapid(ctx: &mut WriteCtx<DataCategory>, domain: &mut ElfWriteDomain
 #[derive(Clone, Debug, Readable, Writable, Serialize, Deserialize)]
 pub struct MapGroup {
     #[require_domain]
-    #[write_args(WriteStringArgs { category: None })]
+    #[write_args(InlineString)]
     pub id: String,
     
     #[write_args(WriteSliceArgs {

@@ -7,7 +7,7 @@ use vivibin::{Readable, Reader, Writable, WriteCtx};
 
 use crate::{
     SymbolName,
-    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, WriteSliceArgs, WriteStringArgs},
+    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, InlineString, WriteSliceArgs},
     formats::FileData,
 };
 
@@ -50,7 +50,7 @@ pub fn write_maplink(ctx: &mut WriteCtx<DataCategory>, domain: &mut ElfWriteDoma
 #[derive(Clone, Debug, Readable, Writable, Serialize, Deserialize)]
 pub struct MaplinkArea {
     #[require_domain]
-    #[write_args(WriteStringArgs { category: None })]
+    #[write_args(InlineString)]
     pub map_name: String,
     
     #[write_args(WriteSliceArgs {

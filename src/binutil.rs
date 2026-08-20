@@ -223,18 +223,8 @@ pub enum ElfCategoryType {
     Data,
 }
 
-#[derive(Debug, Clone)]
-pub struct WriteStringArgs {
-    pub category: Option<DataCategory>,
-}
-
-impl Default for WriteStringArgs {
-    fn default() -> Self {
-        Self {
-            category: Some(DataCategory::Strings),
-        }
-    }
-}
+#[derive(Debug, Clone, Copy)]
+pub struct InlineString;
 
 #[derive(Debug, Clone, Default)]
 pub struct WriteSliceArgs {
@@ -277,22 +267,19 @@ impl ElfWriteDomain {
         }
     }
     
-    pub fn write_string_new(&mut self, ctx: &mut WriteCtx<DataCategory>) -> Result<HeapToken> {
+    pub fn write_string_optional(&mut self, ctx: &mut WriteCtx<DataCategory>, value: Option<&str>) -> Result<()> {
+        if let Some(value) = value {
+            self.write_string(ctx, value)
+        } else {
+            0u32.to_writer(ctx, self)
+        }
+    }
+    
+    pub fn write_string(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &str) -> Result<()> {
         let current_token = ctx.heap_token_at_current_pos()?;
         0u32.to_writer(ctx, self)?;
-        Ok(current_token)
-    }
-    
-    pub fn write_string_optional_new_post(&mut self, ctx: &mut WriteCtx<DataCategory>, value: Option<&str>, args: WriteStringArgs, base: HeapToken) -> Result<()> {
-        let Some(value) = value else {
-            return Ok(())
-        };
         
-        self.write_string_new_post(ctx, value, args, base)
-    }
-    
-    pub fn write_string_new_post(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &str, args: WriteStringArgs, base: HeapToken) -> Result<()> {
-        let category = args.category.unwrap_or(*ctx.default_category());
+        let category = DataCategory::Strings;
         let heap_id = ctx.heap_id_of(&category);
         
         // this 1000 string limit is really funny to me
@@ -303,7 +290,7 @@ impl ElfWriteDomain {
         };
         
         if let Some(token) = existing_token {
-            ctx.add_relocation(base, token)?;
+            ctx.add_relocation(current_token, token)?;
             return Ok(());
         }
         
@@ -311,10 +298,10 @@ impl ElfWriteDomain {
         let alignment = if self.prev_string_lengths[category as usize] > 2 || value.len() > 1 { 4 } else { 0 };
         self.prev_string_lengths[category as usize] = value.len();
         
-        ctx.allocate_next_block_aligned(args.category, alignment, false, |ctx| {
+        ctx.allocate_next_block_aligned(Some(category), alignment, false, |ctx| {
             let start_pos = ctx.position() as usize;
             let new_token = ctx.heap_token_at_current_pos()?;
-            ctx.add_relocation(base, new_token)?;
+            ctx.add_relocation(current_token, new_token)?;
             
             ctx.write_c_str(value)?;
             if value.len() > 2 {
@@ -331,6 +318,56 @@ impl ElfWriteDomain {
             self.string_map.insert((heap_id, Cow::from(value.to_string())), new_token);
             Ok(())
         })?;
+        
+        Ok(())
+    }
+    
+    pub fn write_string_inline(&mut self, ctx: &mut WriteCtx<DataCategory>) -> Result<HeapToken> {
+        let current_token = ctx.heap_token_at_current_pos()?;
+        0u32.to_writer(ctx, self)?;
+        Ok(current_token)
+    }
+    
+    pub fn write_string_inline_post(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &str, base: HeapToken) -> Result<()> {
+        let category = *ctx.default_category();
+        let heap_id = ctx.heap_id_of(&category);
+        
+        // this 1000 string limit is really funny to me
+        let existing_token = if self.string_counts[category as usize] <= 1000 { 
+            self.string_map.get(&(heap_id, Cow::Borrowed(value))).copied()
+        } else {
+            None
+        };
+        
+        if let Some(token) = existing_token {
+            println!("writing existing string inline {value:?} ({base:x?} -> {token:x?})");
+            ctx.add_relocation(base, token)?;
+            return Ok(());
+        }
+        
+        self.string_counts[category as usize] += 1;
+        
+        // relocation
+        let start_pos = ctx.position() as usize;
+        let new_token = ctx.heap_token_at_current_pos()?;
+        ctx.add_relocation(base, new_token)?;
+        
+        println!("writing new string inline {value:?} ({base:x?} -> {new_token:x?})");
+        
+        // write string
+        ctx.write_c_str(value)?;
+        if value.len() > 2 {
+            ctx.align_to(4)?;
+        }
+        let name_size = ctx.position() as usize - start_pos;
+        
+        self.put_symbol(SymbolDeclaration {
+            name: SymbolName::Internal('.'),
+            offset: new_token,
+            size: name_size as u32,
+        });
+        
+        self.string_map.insert((heap_id, Cow::from(value.to_string())), new_token);
         Ok(())
     }
     
@@ -643,49 +680,29 @@ impl<T: Default + 'static> CanWriteSliceWithArgs<DataCategory, T, WriteNullTermi
 }
 
 impl CanWrite<DataCategory, String> for ElfWriteDomain {
-    type PostState = HeapToken;
+    type PostState = ();
     
-    fn write(&mut self, ctx: &mut WriteCtx<DataCategory>, _: &String) -> Result<HeapToken> {
-        self.write_string_new(ctx)
-    }
-    
-    fn write_post(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &String, state: HeapToken) -> Result<()> {
-        self.write_string_new_post(ctx, value, WriteStringArgs::default(), state)
+    fn write(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &String) -> Result<()> {
+        self.write_string(ctx, value)
     }
 }
 
 impl CanWrite<DataCategory, Option<String>> for ElfWriteDomain {
-    type PostState = HeapToken;
+    type PostState = ();
     
-    fn write(&mut self, ctx: &mut WriteCtx<DataCategory>, _: &Option<String>) -> Result<HeapToken> {
-        self.write_string_new(ctx)
-    }
-    
-    fn write_post(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &Option<String>, state: HeapToken) -> Result<()> {
-        self.write_string_optional_new_post(ctx, value.as_deref(), WriteStringArgs::default(), state)
+    fn write(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &Option<String>) -> Result<()> {
+        self.write_string_optional(ctx, value.as_deref())
     }
 }
 
-impl CanWriteWithArgs<DataCategory, String, WriteStringArgs> for ElfWriteDomain {
+impl CanWriteWithArgs<DataCategory, String, InlineString> for ElfWriteDomain {
     type PostState = HeapToken;
     
-    fn write_args(&mut self, ctx: &mut WriteCtx<DataCategory>, _: &String, _: WriteStringArgs) -> Result<HeapToken> {
-        self.write_string_new(ctx)
+    fn write_args(&mut self, ctx: &mut WriteCtx<DataCategory>, _value: &String, _: InlineString) -> Result<HeapToken> {
+        self.write_string_inline(ctx)
     }
     
-    fn write_args_post(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &String, state: HeapToken, args: WriteStringArgs) -> Result<()> {
-        self.write_string_new_post(ctx, value, args, state)
-    }
-}
-
-impl CanWriteWithArgs<DataCategory, Option<String>, WriteStringArgs> for ElfWriteDomain {
-    type PostState = HeapToken;
-    
-    fn write_args(&mut self, ctx: &mut WriteCtx<DataCategory>, _: &Option<String>, _: WriteStringArgs) -> Result<HeapToken> {
-        self.write_string_new(ctx)
-    }
-    
-    fn write_args_post(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &Option<String>, state: HeapToken, args: WriteStringArgs) -> Result<()> {
-        self.write_string_optional_new_post(ctx, value.as_deref(), args, state)
+    fn write_args_post(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &String, state: HeapToken, _: InlineString) -> Result<()> {
+        self.write_string_inline_post(ctx, value, state)
     }
 }

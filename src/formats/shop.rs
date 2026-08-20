@@ -7,7 +7,10 @@ use vivibin::{CanRead, CanWrite, Readable, Reader, Writable, WriteCtx};
 
 use crate::{
     SymbolName,
-    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, ReadNullTerminatedVecArgs, WriteNullTerminatedSliceArgs, WriteStringArgs},
+    binutil::{
+        DataCategory, ElfReadDomain, ElfWriteDomain, InlineString, ReadNullTerminatedVecArgs,
+        WriteNullTerminatedSliceArgs,
+    },
     formats::FileData,
 };
 
@@ -51,7 +54,7 @@ pub fn write_shops(ctx: &mut WriteCtx<DataCategory>, domain: &mut ElfWriteDomain
 #[extra_write_domain_deps(CanWrite<Cat, Option<String>>)]
 pub struct Shop {
     #[require_domain]
-    #[write_args(WriteStringArgs { category: None })]
+    #[write_args(InlineString)]
     pub shop_id: String,
     
     #[read_args(ReadNullTerminatedVecArgs)]

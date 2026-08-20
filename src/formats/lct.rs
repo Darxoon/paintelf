@@ -77,6 +77,7 @@ where
     type PostState = HeapToken;
     
     fn to_writer_unboxed(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<Self::UnboxedPostState> {
+        println!("arealct {}", self.area_id);
         let area_id = domain.write(ctx, &self.area_id)?;
         let maps = domain.write_slice_args_fallback(ctx, &self.maps, WriteNullTerminatedSliceArgs {
             symbol_name: None,
@@ -89,6 +90,7 @@ where
     }
     
     fn to_writer_unboxed_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::UnboxedPostState) -> Result<()> {
+        println!("arealct post {}", self.area_id);
         domain.write_post(ctx, &self.area_id, state.area_id)?;
         domain.write_slice_args_post_fallback(ctx, &self.maps, WriteNullTerminatedSliceArgs {
             symbol_name: None,
