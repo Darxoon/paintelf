@@ -4,7 +4,9 @@ use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
-    CanWrite, CanWriteBox, CanWriteSlice, CanWriteSliceWithArgs, HeapCategory, HeapToken, Readable, Reader, Writable, WriteCtx, WriteSliceFallbackExt, WriteSliceWithArgsFallbackExt,
+    CanWrite, CanWriteBox, CanWriteSlice, CanWriteSliceWithArgs, HeapCategory, HeapToken, Readable, Reader,
+    Writable, WritableExtraState, WritableNested, WriteCtx, WriteSliceFallbackExt,
+    WriteSliceWithArgsFallbackExt,
 };
 
 use crate::{
@@ -32,7 +34,7 @@ pub fn write_lct(ctx: &mut WriteCtx<DataCategory>, domain: &mut ElfWriteDomain, 
         (lcts.len() as u32 + 1).to_writer(ctx, domain)
     })?;
     
-    let mut states = Vec::new();
+    let mut states = Vec::with_capacity(lcts.len());
     
     domain.write_symbol(ctx, "all_lctAnimeDataTbl__Q2_4data3lct", |domain, ctx| {
         for lct in lcts {
@@ -42,8 +44,14 @@ pub fn write_lct(ctx: &mut WriteCtx<DataCategory>, domain: &mut ElfWriteDomain, 
         Ok(())
     })?;
     
+    let mut extra_states = Vec::with_capacity(lcts.len());
+    
     for (lct, state) in lcts.iter().zip(states) {
-        lct.to_writer_post(ctx, domain, state)?;
+        extra_states.push(lct.to_writer_nested_post(ctx, domain, state)?);
+    }
+    
+    for (lct, state) in lcts.iter().zip(extra_states) {
+        state.to_writer_extra_post(lct, ctx, domain)?;
     }
     
     Ok(())
@@ -96,13 +104,26 @@ where
     }
     
     fn to_writer_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::PostState) -> Result<()> {
+        let extra_state = self.to_writer_nested_post(ctx, domain, state)?;
+        extra_state.to_writer_extra_post(self, ctx, domain)
+    }
+}
+
+impl<C, D> WritableNested<C, D> for AreaLct
+where
+    C: HeapCategory,
+    D: CanWrite<C, String>
+        + CanWriteBox<C>
+        + CanWriteSlice<C>
+        + CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>,
+{
+    type ExtraState = Area__PostState<C, D>;
+
+    fn to_writer_nested_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::PostState) -> Result<Self::ExtraState> {
         let token = ctx.heap_token_at_current_pos()?;
         ctx.add_relocation(state, token)?;
         
-        // TODO: figure out how to make the layout more flexible here
-        let state = self.to_writer_unboxed(ctx, domain)?;
-        self.to_writer_unboxed_post(ctx, domain, state)?;
-        Ok(())
+        self.to_writer_unboxed(ctx, domain)
     }
 }
 
@@ -117,6 +138,19 @@ where
 {
     pub area_id: <D as CanWrite<C, String>>::PostState,
     pub maps: <D as CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>>::PostState,
+}
+
+impl<C, D> WritableExtraState<C, D, AreaLct> for Area__PostState<C, D>
+where
+    C: HeapCategory,
+    D: CanWrite<C, String>
+        + CanWriteBox<C>
+        + CanWriteSlice<C>
+        + CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>,
+{
+    fn to_writer_extra_post(self, value: &AreaLct, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<()> {
+        value.to_writer_unboxed_post(ctx, domain, self)
+    }
 }
 
 #[derive(Clone, Debug, Default, Readable, Deserialize, Serialize)]
