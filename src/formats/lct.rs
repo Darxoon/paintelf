@@ -64,7 +64,6 @@ where
         + CanWriteBox<C>
         + CanWriteSlice<C>
         + CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>,
-    <D as CanWrite<C, String>>::PostState: Debug,
 {
     type UnboxedPostState = Area__PostState<C, D>;
     type PostState = HeapToken;
@@ -82,7 +81,6 @@ where
     }
     
     fn to_writer_unboxed_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::UnboxedPostState) -> Result<()> {
-        println!("writing id {} at {:?}", self.area_id, state.area_id);
         domain.write_post(ctx, &self.area_id, state.area_id)?;
         domain.write_slice_args_post_fallback(ctx, &self.maps, WriteNullTerminatedSliceArgs {
             symbol_name: None,
@@ -116,7 +114,6 @@ where
         + CanWriteBox<C>
         + CanWriteSlice<C>
         + CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>,
-    <D as CanWrite<C, String>>::PostState: Debug,
 {
     pub area_id: <D as CanWrite<C, String>>::PostState,
     pub maps: <D as CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>>::PostState,

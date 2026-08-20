@@ -1,7 +1,6 @@
 use core::{
     cmp::Ordering,
     fmt::{self, Display},
-    mem,
 };
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
@@ -9,7 +8,7 @@ use anyhow::{Result, anyhow};
 use binrw::BinWrite;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
-use vivibin::{HeapResolver, HeapToken, WriteCtxBase, WriteDomainExt, util::HashMap};
+use vivibin::{HeapID, HeapResolver, HeapToken, WriteCtxBase, WriteDomainExt, util::HashMap};
 
 use crate::{
     binutil::ElfCategoryType,
@@ -85,7 +84,7 @@ pub struct RelDeclaration {
 }
 
 pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) -> Result<ElfContainer> {
-    let block_offsets;
+    let block_offsets: HashMap<HeapID, (usize, Vec<usize>)>;
     
     // serialize data
     let data_buffer: Option<Vec<u8>>;
@@ -113,20 +112,36 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
             
             let mut resolver = HeapResolver::default();
             
-            let heap_id = ctx.heap_id_of(&DataCategory::Rodata);
+            let rodata_id = ctx.heap_id_of(&DataCategory::Rodata);
+            let strings_id = ctx.heap_id_of(&DataCategory::Strings);
             
             let rodata_heap = ctx.heap(&DataCategory::Rodata);
+            let string_heap = ctx.heap(&DataCategory::Strings);
+            
+            // register heaps
+            let rodata_offset: usize;
             if let Some(rodata_heap) = rodata_heap {
-                resolver.write_heap(&mut domain, heap_id, rodata_heap)?;
+                rodata_offset = resolver.register_heap(rodata_id, rodata_heap, 0);
+            } else {
+                rodata_offset = 0;
             }
             
-            let string_heap = ctx.heap(&DataCategory::Strings);
             if let Some(string_heap) = string_heap {
-                resolver.write_heap(&mut domain, heap_id, string_heap)?;
+                resolver.register_heap(strings_id, string_heap, rodata_offset);
+            }
+            
+            // write them
+            let mut buffer = Vec::new();
+            if let Some(rodata_heap) = rodata_heap {
+                resolver.append_heap_to_buffer(&mut domain, &mut buffer, rodata_id, rodata_heap)?;
+            }
+            
+            if let Some(string_heap) = string_heap {
+                resolver.append_heap_to_buffer(&mut domain, &mut buffer, strings_id, string_heap)?;
             }
             
             data_buffer = None;
-            rodata_buffer = Some(mem::take(&mut *resolver.output_buffers[&heap_id].borrow_mut()).into_inner());
+            rodata_buffer = Some(buffer);
             block_offsets = resolver.block_offsets;
             
             (domain.symbol_declarations, domain.relocations)
@@ -146,25 +161,45 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
             
             let data_id = ctx.heap_id_of(&DataCategory::Data);
             let rodata_id = ctx.heap_id_of(&DataCategory::Rodata);
+            let strings_id = ctx.heap_id_of(&DataCategory::Strings);
             
             let data_heap = ctx.heap(&DataCategory::Data);
-            if let Some(data_heap) = data_heap {
-                resolver.write_heap(&mut domain, data_id, data_heap)?;
-            }
-            
             let rodata_heap = ctx.heap(&DataCategory::Rodata);
-            if let Some(rodata_heap) = rodata_heap {
-                resolver.write_heap(&mut domain, rodata_id, rodata_heap)?;
-            }
-            
             let string_heap = ctx.heap(&DataCategory::Strings);
-            if let Some(string_heap) = string_heap {
-                resolver.write_heap(&mut domain, rodata_id, string_heap)?;
+            
+            // register heaps
+            if let Some(data_heap) = data_heap {
+                resolver.register_heap(data_id, data_heap, 0);
             }
             
-            // TODO: improve API of this
-            data_buffer = Some(mem::take(&mut *resolver.output_buffers[&data_id].borrow_mut()).into_inner());
-            rodata_buffer = Some(mem::take(&mut *resolver.output_buffers[&rodata_id].borrow_mut()).into_inner());
+            let rodata_offset: usize;
+            if let Some(rodata_heap) = rodata_heap {
+                rodata_offset = resolver.register_heap(rodata_id, rodata_heap, 0);
+            } else {
+                rodata_offset = 0;
+            }
+            
+            if let Some(string_heap) = string_heap {
+                resolver.register_heap(strings_id, string_heap, rodata_offset);
+            }
+            
+            // write them
+            if let Some(data_heap) = data_heap {
+                data_buffer = Some(resolver.write_heap(&mut domain, data_id, data_heap)?);
+            } else {
+                data_buffer = None;
+            }
+            
+            let mut buffer = Vec::new();
+            if let Some(rodata_heap) = rodata_heap {
+                resolver.append_heap_to_buffer(&mut domain, &mut buffer, rodata_id, rodata_heap)?;
+            }
+            
+            if let Some(string_heap) = string_heap {
+                resolver.append_heap_to_buffer(&mut domain, &mut buffer, strings_id, string_heap)?;
+            }
+            rodata_buffer = Some(buffer);
+            
             block_offsets = resolver.block_offsets;
             
             (domain.symbol_declarations, domain.relocations)
@@ -244,7 +279,7 @@ pub fn write_relocations(
 
 pub fn write_symtab(
     initial_content: Vec<u8>,
-    block_offsets: &[usize],
+    block_offsets: &HashMap<HeapID, (usize, Vec<usize>)>,
     out_symbol_indices: &mut HashMap<usize, usize>,
     symbol_declarations: &mut Vec<SymbolDeclaration>,
 ) -> Result<(Vec<u8>, u32, Vec<u8>)> {
