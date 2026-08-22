@@ -4,9 +4,9 @@ use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
-    CanWrite, CanWriteBox, CanWriteSlice, CanWriteSliceWithArgs, HeapCategory, HeapToken, Readable, Reader,
-    Writable, WritableExtraState, WritableNested, WriteCtx, WriteSliceFallbackExt,
-    WriteSliceWithArgsFallbackExt,
+    CanWrite, CanWriteBox, CanWriteSlice, CanWriteSliceWithArgs, CanWriteSliceWithArgsNested, HeapCategory,
+    HeapToken, Readable, Reader, Writable, WritableExtraState, WritableNested, WritableNestedUnboxed,
+    WriteCtx, WriteSliceExt, WriteSliceWithArgsExt, WriteSliceWithArgsNestedExt,
 };
 
 use crate::{
@@ -71,7 +71,7 @@ where
     D: CanWrite<C, String>
         + CanWriteBox<C>
         + CanWriteSlice<C>
-        + CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>,
+        + CanWriteSliceWithArgsNested<C, MapLct, WriteNullTerminatedSliceArgs, HeapToken>,
 {
     type UnboxedPostState = Area__PostState<C, D>;
     type PostState = HeapToken;
@@ -79,7 +79,7 @@ where
     fn to_writer_unboxed(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<Self::UnboxedPostState> {
         println!("arealct {}", self.area_id);
         let area_id = domain.write(ctx, &self.area_id)?;
-        let maps = domain.write_slice_args_fallback(ctx, &self.maps, WriteNullTerminatedSliceArgs {
+        let maps = domain.write_slice_args(ctx, &self.maps, WriteNullTerminatedSliceArgs {
             symbol_name: None,
             write_length: true,
         })?;
@@ -91,12 +91,8 @@ where
     
     fn to_writer_unboxed_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::UnboxedPostState) -> Result<()> {
         println!("arealct post {}", self.area_id);
-        domain.write_post(ctx, &self.area_id, state.area_id)?;
-        domain.write_slice_args_post_fallback(ctx, &self.maps, WriteNullTerminatedSliceArgs {
-            symbol_name: None,
-            write_length: true,
-        }, state.maps)?;
-        Ok(())
+        let extra_state = self.to_writer_unboxed_nested_post(ctx, domain, state)?;
+        extra_state.to_writer_extra_post(self, ctx, domain)
     }
     
     fn to_writer(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<HeapToken> {
@@ -111,13 +107,66 @@ where
     }
 }
 
+impl<C, D> WritableNestedUnboxed<C, D> for AreaLct
+where
+    C: HeapCategory,
+    D: CanWrite<C, String>
+        + CanWriteBox<C>
+        + CanWriteSlice<C>
+        + CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>
+        + CanWriteSliceWithArgsNested<C, MapLct, WriteNullTerminatedSliceArgs, HeapToken>,
+{
+    type UnboxedExtraState = AreaLct__UnboxedExtraState<C, D>;
+
+    fn to_writer_unboxed_nested_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::UnboxedPostState) -> Result<Self::UnboxedExtraState> {
+        domain.write_post(ctx, &self.area_id, state.area_id)?;
+        let maps = domain.write_slice_args_nested_post(ctx, &self.maps, WriteNullTerminatedSliceArgs {
+            symbol_name: None,
+            write_length: true,
+        }, state.maps)?;
+        Ok(AreaLct__UnboxedExtraState(maps))
+    }
+}
+
+#[allow(non_camel_case_types)]
+pub struct AreaLct__UnboxedExtraState<C, D>(
+    <D as CanWriteSliceWithArgsNested<C, MapLct, WriteNullTerminatedSliceArgs, HeapToken>>::ExtraState,
+)
+where
+    C: HeapCategory,
+    D: CanWrite<C, String>
+        + CanWriteBox<C>
+        + CanWriteSlice<C>
+        + CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>
+        + CanWriteSliceWithArgsNested<C, MapLct, WriteNullTerminatedSliceArgs, HeapToken>;
+
+impl<C, D> WritableExtraState<C, D, AreaLct> for AreaLct__UnboxedExtraState<C, D>
+where
+    C: HeapCategory,
+    D: CanWrite<C, String>
+        + CanWriteBox<C>
+        + CanWriteSlice<C>
+        + CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>
+        + CanWriteSliceWithArgsNested<C, MapLct, WriteNullTerminatedSliceArgs, HeapToken>,
+{
+    fn to_writer_extra_post(self, value: &AreaLct, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<()> {
+        domain.write_slice_args_of_extra_post(ctx, &value.maps, self.0, WriteNullTerminatedSliceArgs {
+            symbol_name: None,
+            write_length: true,
+        }, |domain, ctx, value, state| {
+            value.to_writer_post(ctx, domain, state)
+        })
+    }
+}
+
 impl<C, D> WritableNested<C, D> for AreaLct
 where
     C: HeapCategory,
     D: CanWrite<C, String>
         + CanWriteBox<C>
         + CanWriteSlice<C>
-        + CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>,
+        + CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>
+        + CanWriteSliceWithArgsNested<C, MapLct, WriteNullTerminatedSliceArgs, HeapToken>,
 {
     type ExtraState = Area__PostState<C, D>;
 
@@ -148,7 +197,8 @@ where
     D: CanWrite<C, String>
         + CanWriteBox<C>
         + CanWriteSlice<C>
-        + CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>,
+        + CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>
+        + CanWriteSliceWithArgsNested<C, MapLct, WriteNullTerminatedSliceArgs, HeapToken>,
 {
     fn to_writer_extra_post(self, value: &AreaLct, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<()> {
         value.to_writer_unboxed_post(ctx, domain, self)
@@ -169,7 +219,7 @@ impl<C: HeapCategory, D: CanWrite<C, String> + CanWriteBox<C> + CanWriteSlice<C>
     
     fn to_writer_unboxed(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<Self::UnboxedPostState> {
         let map_id = domain.write(ctx, &self.map_id)?;
-        let lcts = domain.write_slice_fallback(ctx, &self.lcts)?;
+        let lcts = domain.write_slice(ctx, &self.lcts)?;
         Ok(MapLct__PostState {
             map_id,
             lcts,
@@ -178,7 +228,7 @@ impl<C: HeapCategory, D: CanWrite<C, String> + CanWriteBox<C> + CanWriteSlice<C>
     
     fn to_writer_unboxed_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::UnboxedPostState) -> Result<()> {
         domain.write_post(ctx, &self.map_id, state.map_id)?;
-        domain.write_slice_post_fallback(ctx, &self.lcts, state.lcts)?;
+        domain.write_slice_post(ctx, &self.lcts, state.lcts)?;
         Ok(())
     }
     
