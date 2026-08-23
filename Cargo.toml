@@ -21,4 +21,4 @@ std_instead_of_alloc = "warn"
 [profile.release]
 panic = "abort"
 strip = true
-lto = true
+# lto = "thin"
