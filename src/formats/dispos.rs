@@ -80,7 +80,7 @@ impl<D: CanRead<String> + CanRead<Option<String>> + CanRead<Pointer> + CanReadVe
 #[derive(Debug, Clone, Readable, Writable, Serialize, Deserialize)]
 #[boxed]
 #[extra_read_domain_deps(CanRead<Option<String>>)]
-#[extra_write_domain_deps(CanWrite<Cat, Option<String>>)]
+#[extra_write_domain_deps(CanWrite<Option<String>>)]
 pub struct DisposNpc {
     #[require_domain]
     #[write_args(InlineString)]
@@ -179,7 +179,7 @@ pub struct Npc {
 #[derive(Debug, Clone, Readable, Writable, Serialize, Deserialize)]
 #[boxed]
 #[extra_read_domain_deps(CanRead<Option<String>>)]
-#[extra_write_domain_deps(CanWrite<Cat, Option<String>>)]
+#[extra_write_domain_deps(CanWrite<Option<String>>)]
 pub struct DisposMobj {
     #[require_domain]
     #[write_args(InlineString)]

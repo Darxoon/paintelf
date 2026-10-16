@@ -51,7 +51,7 @@ pub fn write_shops(ctx: &mut WriteCtx<DataCategory>, domain: &mut ElfWriteDomain
 
 #[derive(Clone, Debug, Readable, Writable, Deserialize, Serialize)]
 #[extra_read_domain_deps(CanRead<Option<String>>)]
-#[extra_write_domain_deps(CanWrite<Cat, Option<String>>)]
+#[extra_write_domain_deps(CanWrite<Option<String>>)]
 pub struct Shop {
     #[require_domain]
     #[write_args(InlineString)]

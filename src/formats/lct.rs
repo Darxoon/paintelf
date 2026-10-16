@@ -5,7 +5,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
     CanWrite, CanWriteBox, CanWriteSlice, CanWriteSliceNested, CanWriteSliceWithArgs,
-    CanWriteSliceWithArgsNested, HeapCategory, HeapToken, Readable, Reader, Writable, WritableExtraState,
+    CanWriteSliceWithArgsNested, HeapToken, Readable, Reader, Writable, WritableExtraState,
     WritableNested, WritableNestedUnboxed, WriteCtx, WriteSliceExt, WriteSliceNestedExt,
     WriteSliceWithArgsExt,
 };
@@ -85,26 +85,25 @@ pub struct AreaLct {
 }
 
 #[allow(non_camel_case_types)]
-pub trait AreaLct__Reqs<C: HeapCategory>: CanWrite<C, String>
-    + CanWriteSliceWithArgsNested<C, MapLct, WriteNullTerminatedSliceArgs>
-    + MapLct__Reqs<C>
+pub trait AreaLct__Reqs: CanWrite<String>
+    + CanWriteSliceWithArgsNested<MapLct, WriteNullTerminatedSliceArgs>
+    + MapLct__Reqs
 {
 }
 
-impl<C, D> AreaLct__Reqs<C> for D
+impl<D> AreaLct__Reqs for D
 where
-    C: HeapCategory,
-    D: CanWrite<C, String>
-        + CanWriteSliceWithArgsNested<C, MapLct, WriteNullTerminatedSliceArgs>
-        + MapLct__Reqs<C>,
+    D: CanWrite<String>
+        + CanWriteSliceWithArgsNested<MapLct, WriteNullTerminatedSliceArgs>
+        + MapLct__Reqs,
 {
 }
 
-impl<C: HeapCategory, D: AreaLct__Reqs<C>> Writable<C, D> for AreaLct {
-    type UnboxedPostState = AreaLct__PostState<C, D>;
+impl<D: AreaLct__Reqs> Writable<D> for AreaLct {
+    type UnboxedPostState = AreaLct__PostState<D>;
     type PostState = HeapToken;
     
-    fn to_writer_unboxed(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<Self::UnboxedPostState> {
+    fn to_writer_unboxed(&self, ctx: &mut WriteCtx<D::Cat>, domain: &mut D) -> Result<Self::UnboxedPostState> {
         let area_id = domain.write(ctx, &self.area_id)?;
         let maps = domain.write_slice_args(ctx, &self.maps, WriteNullTerminatedSliceArgs {
             symbol_name: None,
@@ -116,27 +115,27 @@ impl<C: HeapCategory, D: AreaLct__Reqs<C>> Writable<C, D> for AreaLct {
         })
     }
     
-    fn to_writer_unboxed_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::UnboxedPostState) -> Result<()> {
+    fn to_writer_unboxed_post(&self, ctx: &mut WriteCtx<D::Cat>, domain: &mut D, state: Self::UnboxedPostState) -> Result<()> {
         let extra_state = self.to_writer_unboxed_nested_post(ctx, domain, state)?;
         extra_state.to_writer_basic_extra_post(self, ctx, domain)
     }
     
-    fn to_writer(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<HeapToken> {
+    fn to_writer(&self, ctx: &mut WriteCtx<D::Cat>, domain: &mut D) -> Result<HeapToken> {
         let token = ctx.heap_token_at_current_pos()?;
         0u32.to_writer(ctx, domain)?;
         Ok(token)
     }
     
-    fn to_writer_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::PostState) -> Result<()> {
+    fn to_writer_post(&self, ctx: &mut WriteCtx<D::Cat>, domain: &mut D, state: Self::PostState) -> Result<()> {
         let extra_state = self.to_writer_nested_post(ctx, domain, state)?;
         extra_state.to_writer_basic_extra_post(self, ctx, domain)
     }
 }
 
-impl<C: HeapCategory, D: AreaLct__Reqs<C>> WritableNestedUnboxed<C, D> for AreaLct {
-    type UnboxedExtraState = AreaLct__UnboxedExtraState<C, D>;
+impl<D: AreaLct__Reqs> WritableNestedUnboxed<D> for AreaLct {
+    type UnboxedExtraState = AreaLct__UnboxedExtraState<D>;
 
-    fn to_writer_unboxed_nested_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::UnboxedPostState) -> Result<Self::UnboxedExtraState> {
+    fn to_writer_unboxed_nested_post(&self, ctx: &mut WriteCtx<D::Cat>, domain: &mut D, state: Self::UnboxedPostState) -> Result<Self::UnboxedExtraState> {
         domain.write_post(ctx, &self.area_id, state.area_id)?;
         let maps = domain.write_slice_args_nested_of_post(ctx, &self.maps, WriteNullTerminatedSliceArgs {
             symbol_name: None,
@@ -151,14 +150,14 @@ impl<C: HeapCategory, D: AreaLct__Reqs<C>> WritableNestedUnboxed<C, D> for AreaL
 }
 
 #[allow(non_camel_case_types)]
-pub struct AreaLct__UnboxedExtraState<C: HeapCategory, D: AreaLct__Reqs<C>>(
-    <D as CanWriteSliceWithArgsNested<C, MapLct, WriteNullTerminatedSliceArgs>>::ExtraState<HeapToken>,
+pub struct AreaLct__UnboxedExtraState<D: AreaLct__Reqs>(
+    <D as CanWriteSliceWithArgsNested<MapLct, WriteNullTerminatedSliceArgs>>::ExtraState<HeapToken>,
 );
 
-impl<C: HeapCategory, D: AreaLct__Reqs<C>> WritableExtraState<C, D, AreaLct> for AreaLct__UnboxedExtraState<C, D> {
-    type OutExtraState = AreaLct__UnboxedExtraState2<C, D>;
+impl<D: AreaLct__Reqs> WritableExtraState<D, AreaLct> for AreaLct__UnboxedExtraState<D> {
+    type OutExtraState = AreaLct__UnboxedExtraState2<D>;
     
-    fn to_writer_nested_extra_post(self, value: &AreaLct, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<AreaLct__UnboxedExtraState2<C, D>> {
+    fn to_writer_nested_extra_post(self, value: &AreaLct, ctx: &mut WriteCtx<D::Cat>, domain: &mut D) -> Result<AreaLct__UnboxedExtraState2<D>> {
         let extra_states = domain.write_slice_args_of_extra_post(ctx, &value.maps, WriteNullTerminatedSliceArgs {
             symbol_name: None,
             write_length: true,
@@ -170,14 +169,14 @@ impl<C: HeapCategory, D: AreaLct__Reqs<C>> WritableExtraState<C, D, AreaLct> for
 }
 
 #[allow(non_camel_case_types)]
-pub struct AreaLct__UnboxedExtraState2<C: HeapCategory, D: AreaLct__Reqs<C>>(
-    <D as CanWriteSliceWithArgsNested<C, MapLct, WriteNullTerminatedSliceArgs>>::ExtraState<MapLct__PostState<C, D>>,
+pub struct AreaLct__UnboxedExtraState2<D: AreaLct__Reqs>(
+    <D as CanWriteSliceWithArgsNested<MapLct, WriteNullTerminatedSliceArgs>>::ExtraState<MapLct__PostState<D>>,
 );
 
-impl<C: HeapCategory, D: AreaLct__Reqs<C>> WritableExtraState<C, D, AreaLct> for AreaLct__UnboxedExtraState2<C, D> {
-    type OutExtraState = AreaLct__UnboxedExtraState3<C, D>;
+impl<D: AreaLct__Reqs> WritableExtraState<D, AreaLct> for AreaLct__UnboxedExtraState2<D> {
+    type OutExtraState = AreaLct__UnboxedExtraState3<D>;
 
-    fn to_writer_nested_extra_post(self, value: &AreaLct, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<Self::OutExtraState> {
+    fn to_writer_nested_extra_post(self, value: &AreaLct, ctx: &mut WriteCtx<D::Cat>, domain: &mut D) -> Result<Self::OutExtraState> {
         let extra_states = domain.write_slice_args_of_extra_post(ctx, &value.maps, WriteNullTerminatedSliceArgs {
             symbol_name: None,
             write_length: true,
@@ -189,15 +188,15 @@ impl<C: HeapCategory, D: AreaLct__Reqs<C>> WritableExtraState<C, D, AreaLct> for
 }
 
 #[allow(non_camel_case_types)]
-pub struct AreaLct__UnboxedExtraState3<C: HeapCategory, D: AreaLct__Reqs<C>>(
-    <D as CanWriteSliceWithArgsNested<C, MapLct, WriteNullTerminatedSliceArgs>>::ExtraState<MapLct__UnboxedExtraState<C, D>>,
+pub struct AreaLct__UnboxedExtraState3<D: AreaLct__Reqs>(
+    <D as CanWriteSliceWithArgsNested<MapLct, WriteNullTerminatedSliceArgs>>::ExtraState<MapLct__UnboxedExtraState<D>>,
 );
 
-impl<C: HeapCategory, D: AreaLct__Reqs<C>> WritableExtraState<C, D, AreaLct> for AreaLct__UnboxedExtraState3<C, D> {
+impl<D: AreaLct__Reqs> WritableExtraState<D, AreaLct> for AreaLct__UnboxedExtraState3<D> {
     type OutExtraState = ();
 
-    fn to_writer_nested_extra_post(self, value: &AreaLct, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<()> {
-        let _: <D as CanWriteSliceWithArgsNested<C, MapLct, WriteNullTerminatedSliceArgs>>::ExtraState<()> = domain.write_slice_args_of_extra_post(ctx, &value.maps, WriteNullTerminatedSliceArgs {
+    fn to_writer_nested_extra_post(self, value: &AreaLct, ctx: &mut WriteCtx<D::Cat>, domain: &mut D) -> Result<()> {
+        let _: <D as CanWriteSliceWithArgsNested<MapLct, WriteNullTerminatedSliceArgs>>::ExtraState<()> = domain.write_slice_args_of_extra_post(ctx, &value.maps, WriteNullTerminatedSliceArgs {
             symbol_name: None,
             write_length: true,
         }, self.0, |domain, ctx, value, state| {
@@ -208,10 +207,10 @@ impl<C: HeapCategory, D: AreaLct__Reqs<C>> WritableExtraState<C, D, AreaLct> for
     }
 }
 
-impl<C: HeapCategory, D: AreaLct__Reqs<C>> WritableNested<C, D> for AreaLct {
-    type ExtraState = AreaLct__PostState<C, D>;
+impl<D: AreaLct__Reqs> WritableNested<D> for AreaLct {
+    type ExtraState = AreaLct__PostState<D>;
 
-    fn to_writer_nested_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::PostState) -> Result<Self::ExtraState> {
+    fn to_writer_nested_post(&self, ctx: &mut WriteCtx<D::Cat>, domain: &mut D, state: Self::PostState) -> Result<Self::ExtraState> {
         let token = ctx.heap_token_at_current_pos()?;
         ctx.add_relocation(state, token)?;
         
@@ -220,15 +219,15 @@ impl<C: HeapCategory, D: AreaLct__Reqs<C>> WritableNested<C, D> for AreaLct {
 }
 
 #[allow(non_camel_case_types)]
-pub struct AreaLct__PostState<C: HeapCategory, D: AreaLct__Reqs<C>> {
-    pub area_id: <D as CanWrite<C, String>>::PostState,
-    pub maps: <D as CanWriteSliceWithArgs<C, MapLct, WriteNullTerminatedSliceArgs>>::PostState,
+pub struct AreaLct__PostState<D: AreaLct__Reqs> {
+    pub area_id: <D as CanWrite<String>>::PostState,
+    pub maps: <D as CanWriteSliceWithArgs<MapLct, WriteNullTerminatedSliceArgs>>::PostState,
 }
 
-impl<C: HeapCategory, D: AreaLct__Reqs<C>> WritableExtraState<C, D, AreaLct> for AreaLct__PostState<C, D> {
-    type OutExtraState = AreaLct__UnboxedExtraState<C, D>;
+impl<D: AreaLct__Reqs> WritableExtraState<D, AreaLct> for AreaLct__PostState<D> {
+    type OutExtraState = AreaLct__UnboxedExtraState<D>;
     
-    fn to_writer_nested_extra_post(self, value: &AreaLct, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<Self::OutExtraState> {
+    fn to_writer_nested_extra_post(self, value: &AreaLct, ctx: &mut WriteCtx<D::Cat>, domain: &mut D) -> Result<Self::OutExtraState> {
         value.to_writer_unboxed_nested_post(ctx, domain, self)
     }
 }
@@ -242,24 +241,23 @@ pub struct MapLct {
 }
 
 #[allow(non_camel_case_types)]
-pub trait MapLct__Reqs<C: HeapCategory>: CanWrite<C, String>
-    + CanWriteBox<C>
-    + CanWriteSliceNested<C>
+pub trait MapLct__Reqs: CanWrite<String>
+    + CanWriteBox
+    + CanWriteSliceNested
 {
 }
 
-impl<C, D> MapLct__Reqs<C> for D
+impl<D> MapLct__Reqs for D
 where
-    C: HeapCategory,
-    D: CanWrite<C, String> + CanWriteBox<C> + CanWriteSliceNested<C>
+    D: CanWrite<String> + CanWriteBox + CanWriteSliceNested
 {
 }
 
-impl<C: HeapCategory, D: MapLct__Reqs<C>> Writable<C, D> for MapLct {
-    type UnboxedPostState = MapLct__PostState<C, D>;
+impl<D: MapLct__Reqs> Writable<D> for MapLct {
+    type UnboxedPostState = MapLct__PostState<D>;
     type PostState = HeapToken;
     
-    fn to_writer_unboxed(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<MapLct__PostState<C, D>> {
+    fn to_writer_unboxed(&self, ctx: &mut WriteCtx<D::Cat>, domain: &mut D) -> Result<MapLct__PostState<D>> {
         let map_id = domain.write(ctx, &self.map_id)?;
         let lcts = domain.write_slice(ctx, &self.lcts)?;
         Ok(MapLct__PostState {
@@ -268,27 +266,27 @@ impl<C: HeapCategory, D: MapLct__Reqs<C>> Writable<C, D> for MapLct {
         })
     }
     
-    fn to_writer_unboxed_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: MapLct__PostState<C, D>) -> Result<()> {
+    fn to_writer_unboxed_post(&self, ctx: &mut WriteCtx<D::Cat>, domain: &mut D, state: MapLct__PostState<D>) -> Result<()> {
         let extra_state = self.to_writer_unboxed_nested_post(ctx, domain, state)?;
         extra_state.to_writer_basic_extra_post(self, ctx, domain)
     }
     
-    fn to_writer(&self, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<HeapToken> {
+    fn to_writer(&self, ctx: &mut WriteCtx<D::Cat>, domain: &mut D) -> Result<HeapToken> {
         let token = ctx.heap_token_at_current_pos()?;
         0u32.to_writer(ctx, domain)?;
         Ok(token)
     }
     
-    fn to_writer_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::PostState) -> Result<()> {
+    fn to_writer_post(&self, ctx: &mut WriteCtx<D::Cat>, domain: &mut D, state: Self::PostState) -> Result<()> {
         let extra_state = self.to_writer_nested_post(ctx, domain, state)?;
         extra_state.to_writer_basic_extra_post(self, ctx, domain)
     }
 }
 
-impl<C: HeapCategory, D: MapLct__Reqs<C>> WritableNestedUnboxed<C, D> for MapLct {
-    type UnboxedExtraState = MapLct__UnboxedExtraState<C, D>;
+impl<D: MapLct__Reqs> WritableNestedUnboxed<D> for MapLct {
+    type UnboxedExtraState = MapLct__UnboxedExtraState<D>;
 
-    fn to_writer_unboxed_nested_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: MapLct__PostState<C, D>) -> Result<MapLct__UnboxedExtraState<C, D>> {
+    fn to_writer_unboxed_nested_post(&self, ctx: &mut WriteCtx<D::Cat>, domain: &mut D, state: MapLct__PostState<D>) -> Result<MapLct__UnboxedExtraState<D>> {
         domain.write_post(ctx, &self.map_id, state.map_id)?;
         let lcts = domain.write_slice_nested_post(ctx, &self.lcts, state.lcts)?;
         Ok(MapLct__UnboxedExtraState { lcts })
@@ -296,25 +294,25 @@ impl<C: HeapCategory, D: MapLct__Reqs<C>> WritableNestedUnboxed<C, D> for MapLct
 }
 
 #[allow(non_camel_case_types)]
-pub struct MapLct__UnboxedExtraState<C: HeapCategory, D: MapLct__Reqs<C>> {
-    lcts: <D as CanWriteSliceNested<C>>::ExtraState<Lct__PostState<C, D>>,
+pub struct MapLct__UnboxedExtraState<D: MapLct__Reqs> {
+    lcts: <D as CanWriteSliceNested>::ExtraState<Lct__PostState<D>>,
 }
 
-impl<C: HeapCategory, D: MapLct__Reqs<C>> WritableExtraState<C, D, MapLct> for MapLct__UnboxedExtraState<C, D> {
+impl<D: MapLct__Reqs> WritableExtraState<D, MapLct> for MapLct__UnboxedExtraState<D> {
     type OutExtraState = ();
 
-    fn to_writer_nested_extra_post(self, value: &MapLct, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<Self::OutExtraState> {
-        let _: <D as CanWriteSliceNested<C>>::ExtraState<()> = domain.write_slice_of_nested_extra_post(ctx, &value.lcts, self.lcts, |domain, ctx, value, state| {
+    fn to_writer_nested_extra_post(self, value: &MapLct, ctx: &mut WriteCtx<D::Cat>, domain: &mut D) -> Result<Self::OutExtraState> {
+        let _: <D as CanWriteSliceNested>::ExtraState<()> = domain.write_slice_of_nested_extra_post(ctx, &value.lcts, self.lcts, |domain, ctx, value, state| {
             value.to_writer_post(ctx, domain, state)
         })?;
         Ok(())
     }
 }
 
-impl<C: HeapCategory, D: MapLct__Reqs<C>> WritableNested<C, D> for MapLct {
-    type ExtraState = MapLct__PostState<C, D>;
+impl<D: MapLct__Reqs> WritableNested<D> for MapLct {
+    type ExtraState = MapLct__PostState<D>;
 
-    fn to_writer_nested_post(&self, ctx: &mut WriteCtx<C>, domain: &mut D, state: Self::PostState) -> Result<Self::ExtraState> {
+    fn to_writer_nested_post(&self, ctx: &mut WriteCtx<D::Cat>, domain: &mut D, state: Self::PostState) -> Result<Self::ExtraState> {
         let token = ctx.heap_token_at_current_pos()?;
         ctx.add_relocation(state, token)?;
         
@@ -323,15 +321,15 @@ impl<C: HeapCategory, D: MapLct__Reqs<C>> WritableNested<C, D> for MapLct {
 }
 
 #[allow(non_camel_case_types)]
-pub struct MapLct__PostState<C: HeapCategory, D: MapLct__Reqs<C>> {
-    pub map_id: <D as CanWrite<C, String>>::PostState,
-    pub lcts: <D as CanWriteSlice<C>>::PostState,
+pub struct MapLct__PostState<D: MapLct__Reqs> {
+    pub map_id: <D as CanWrite<String>>::PostState,
+    pub lcts: <D as CanWriteSlice>::PostState,
 }
 
-impl<C: HeapCategory, D: MapLct__Reqs<C>> WritableExtraState<C, D, MapLct> for MapLct__PostState<C, D> {
-    type OutExtraState = MapLct__UnboxedExtraState<C, D>;
+impl<D: MapLct__Reqs> WritableExtraState<D, MapLct> for MapLct__PostState<D> {
+    type OutExtraState = MapLct__UnboxedExtraState<D>;
 
-    fn to_writer_nested_extra_post(self, value: &MapLct, ctx: &mut WriteCtx<C>, domain: &mut D) -> Result<MapLct__UnboxedExtraState<C, D>> {
+    fn to_writer_nested_extra_post(self, value: &MapLct, ctx: &mut WriteCtx<D::Cat>, domain: &mut D) -> Result<MapLct__UnboxedExtraState<D>> {
         value.to_writer_unboxed_nested_post(ctx, domain, self)
     }
 }

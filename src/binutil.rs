@@ -591,7 +591,7 @@ impl WriteDomain for ElfWriteDomain {
     }
 }
 
-impl CanWriteBox<DataCategory> for ElfWriteDomain {
+impl CanWriteBox for ElfWriteDomain {
     type PostState = HeapToken;
 
     fn write_box_of<P>(
@@ -615,7 +615,7 @@ impl CanWriteBox<DataCategory> for ElfWriteDomain {
     }
 }
 
-impl CanWriteSlice<DataCategory> for ElfWriteDomain {
+impl CanWriteSlice for ElfWriteDomain {
     type PostState = HeapToken;
     
     fn write_slice_of<T: 'static, P>(
@@ -641,7 +641,7 @@ impl CanWriteSlice<DataCategory> for ElfWriteDomain {
     }
 }
 
-impl CanWriteSliceNested<DataCategory> for ElfWriteDomain {
+impl CanWriteSliceNested for ElfWriteDomain {
     type ExtraState<E> = Vec<E>;
     
     fn write_slice_nested_of_post<T: 'static, P>(
@@ -667,7 +667,7 @@ impl CanWriteSliceNested<DataCategory> for ElfWriteDomain {
     }
 }
 
-impl<T: 'static> CanWriteSliceWithArgs<DataCategory, T, WriteSliceArgs> for ElfWriteDomain {
+impl<T: 'static> CanWriteSliceWithArgs<T, WriteSliceArgs> for ElfWriteDomain {
     type PostState = HeapToken;
     
     fn write_slice_args_of<P>(
@@ -695,7 +695,7 @@ impl<T: 'static> CanWriteSliceWithArgs<DataCategory, T, WriteSliceArgs> for ElfW
     }
 }
 
-impl<T: Default + 'static> CanWriteSliceWithArgs<DataCategory, T, WriteNullTerminatedSliceArgs> for ElfWriteDomain {
+impl<T: Default + 'static> CanWriteSliceWithArgs<T, WriteNullTerminatedSliceArgs> for ElfWriteDomain {
     type PostState = HeapToken;
     
     fn write_slice_args_of<P>(
@@ -729,7 +729,7 @@ impl<T: Default + 'static> CanWriteSliceWithArgs<DataCategory, T, WriteNullTermi
     }
 }
 
-impl<T: Default + 'static> CanWriteSliceWithArgsNested<DataCategory, T, WriteNullTerminatedSliceArgs> for ElfWriteDomain {
+impl<T: Default + 'static> CanWriteSliceWithArgsNested<T, WriteNullTerminatedSliceArgs> for ElfWriteDomain {
     type ExtraState<E> = Vec<E>;
 
     fn write_slice_args_nested_of_post<P>(
@@ -757,7 +757,7 @@ impl<T: Default + 'static> CanWriteSliceWithArgsNested<DataCategory, T, WriteNul
     }
 }
 
-impl CanWrite<DataCategory, String> for ElfWriteDomain {
+impl CanWrite<String> for ElfWriteDomain {
     type PostState = ();
     
     fn write(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &String) -> Result<()> {
@@ -765,7 +765,7 @@ impl CanWrite<DataCategory, String> for ElfWriteDomain {
     }
 }
 
-impl CanWrite<DataCategory, Option<String>> for ElfWriteDomain {
+impl CanWrite<Option<String>> for ElfWriteDomain {
     type PostState = ();
     
     fn write(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &Option<String>) -> Result<()> {
@@ -773,7 +773,7 @@ impl CanWrite<DataCategory, Option<String>> for ElfWriteDomain {
     }
 }
 
-impl CanWriteWithArgs<DataCategory, String, InlineString> for ElfWriteDomain {
+impl CanWriteWithArgs<String, InlineString> for ElfWriteDomain {
     type PostState = HeapToken;
     
     fn write_args(&mut self, ctx: &mut WriteCtx<DataCategory>, _value: &String, _: InlineString) -> Result<HeapToken> {
