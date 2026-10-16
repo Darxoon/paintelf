@@ -283,99 +283,9 @@ pub fn write_symtab(
     out_symbol_indices: &mut HashMap<usize, usize>,
     symbol_declarations: &mut Vec<SymbolDeclaration>,
 ) -> Result<(Vec<u8>, u32, Vec<u8>)> {
-    // name unnamed internal symbols
-    {
-        let mut symbols: Vec<(char, &mut SymbolDeclaration)> = symbol_declarations.iter_mut()
-            .flat_map(|symbol| match symbol.name {
-                    SymbolName::Internal(initial_char) => Some((initial_char, symbol)),
-                    _ => None,
-            })
-            .collect::<Vec<_>>();
-        
-        symbols.sort_by(|(initial_char1, symbol1), (initial_char2, symbol2)| {
-            initial_char1.cmp(initial_char2).then(symbol1.offset.cmp(&symbol2.offset))
-        });
-        
-        let mut symbol_name_gen = SymbolNameGenerator::new();
-        let mut prev_initial_char = '\0';
-        
-        for (initial_char, symbol) in symbols {
-            // Make sure every initial_char has its own name gen
-            if prev_initial_char  != initial_char {
-                symbol_name_gen = SymbolNameGenerator::new();
-                prev_initial_char = initial_char;
-            }
-            
-            let tail = symbol_name_gen.next();
-            
-            let mut name = String::with_capacity(tail.len() + 1);
-            name.push(initial_char);
-            name.push_str(tail);
-            
-            symbol.name = SymbolName::InternalUnmangled(name);
-        }
-    }
-    
-    // name named internal symbols
-    {
-        let mut symbol_name_gen = SymbolNameGenerator::new();
-        
-        let mut symbols: Vec<&mut SymbolDeclaration> = symbol_declarations.iter_mut()
-            .filter(|symbol| matches!(symbol.name, SymbolName::InternalNamed(_)))
-            .collect::<Vec<_>>();
-        
-        symbols.sort_by(|a, b| {
-            let SymbolName::InternalNamed(name1) = &a.name else {
-                unreachable!();
-            };
-            let SymbolName::InternalNamed(name2) = &b.name else {
-                unreachable!();
-            };
-            
-            fn is_less_special(a: &str, b: &str) -> bool {
-                let a_bytes = a.as_bytes();
-                let b_bytes = b.as_bytes();
-                
-                if a_bytes.len() == b_bytes.len() || !a_bytes.starts_with(b_bytes) {
-                    return false;
-                }
-                
-                // SAFETY: Assuming b is valid utf8, it does not end on a continuation byte,
-                // so the first b bytes of a also don't. Therefore, this slice does not start
-                // in the middle of a codepoint and assuming a is valid, this slice is too.
-                let tail = unsafe { str::from_utf8_unchecked(&a_bytes[b_bytes.len()..]) };
-                let first_char = tail.chars().next().unwrap();
-                
-                // wtf??
-                first_char < 'P'
-            }
-            
-            if is_less_special(name1, name2) {
-                Ordering::Less
-            } else if is_less_special(name2, name1) {
-                Ordering::Greater
-            } else {
-                name1.cmp(name2)
-            }
-        });
-        
-        for symbol in symbols {
-            let SymbolName::InternalNamed(name) = &symbol.name else {
-                unreachable!();
-            };
-            
-            let initial_char = name.chars().next().unwrap();
-            let tail = symbol_name_gen.next();
-            
-            let mut result = String::with_capacity(tail.len() + 1);
-            result.push(initial_char);
-            result.push_str(tail);
-            
-            // println!("{name} {result}");
-            
-            symbol.name = SymbolName::InternalUnmangled(result);
-        }
-    }
+    // name symbols
+    name_unnamed_symbols(symbol_declarations);
+    name_internal_symbols(symbol_declarations);
     
     // start serializing
     let mut writer = Cursor::new(Vec::new());
@@ -468,6 +378,97 @@ pub fn write_symtab(
     Ok((writer.into_inner(), last_local_symbol, strtab.into_inner()))
 }
 
+fn name_unnamed_symbols(symbol_declarations: &mut Vec<SymbolDeclaration>) {
+    let mut symbols: Vec<(char, &mut SymbolDeclaration)> = symbol_declarations.iter_mut()
+        .flat_map(|symbol| match symbol.name {
+                SymbolName::Internal(initial_char) => Some((initial_char, symbol)),
+                _ => None,
+        })
+        .collect::<Vec<_>>();
+    
+    symbols.sort_by(|(initial_char1, symbol1), (initial_char2, symbol2)| {
+        initial_char1.cmp(initial_char2).then(symbol1.offset.cmp(&symbol2.offset))
+    });
+    
+    let mut symbol_name_gen = SymbolNameGenerator::new();
+    let mut prev_initial_char = '\0';
+    
+    for (initial_char, symbol) in symbols {
+        // Make sure every initial_char has its own name gen
+        if prev_initial_char  != initial_char {
+            symbol_name_gen = SymbolNameGenerator::new();
+            prev_initial_char = initial_char;
+        }
+        
+        let tail = symbol_name_gen.next();
+        
+        let mut name = String::with_capacity(tail.len() + 1);
+        name.push(initial_char);
+        name.push_str(tail);
+        
+        symbol.name = SymbolName::InternalUnmangled(name);
+    }
+}
+
+fn name_internal_symbols(symbol_declarations: &mut Vec<SymbolDeclaration>) {
+    let mut symbol_name_gen = SymbolNameGenerator::new();
+    
+    let mut symbols: Vec<&mut SymbolDeclaration> = symbol_declarations.iter_mut()
+        .filter(|symbol| matches!(symbol.name, SymbolName::InternalNamed(_)))
+        .collect::<Vec<_>>();
+    
+    symbols.sort_by(|a, b| {
+        let SymbolName::InternalNamed(name1) = &a.name else {
+            unreachable!();
+        };
+        let SymbolName::InternalNamed(name2) = &b.name else {
+            unreachable!();
+        };
+        
+        fn is_less_special(a: &str, b: &str) -> bool {
+            let a_bytes = a.as_bytes();
+            let b_bytes = b.as_bytes();
+            
+            if a_bytes.len() == b_bytes.len() || !a_bytes.starts_with(b_bytes) {
+                return false;
+            }
+            
+            // SAFETY: Assuming b is valid utf8, it does not end on a continuation byte,
+            // so the first b bytes of a also don't. Therefore, this slice does not start
+            // in the middle of a codepoint and assuming a is valid, this slice is too.
+            let tail = unsafe { str::from_utf8_unchecked(&a_bytes[b_bytes.len()..]) };
+            let first_char = tail.chars().next().unwrap();
+            
+            // wtf??
+            first_char < 'P'
+        }
+        
+        if is_less_special(name1, name2) {
+            Ordering::Less
+        } else if is_less_special(name2, name1) {
+            Ordering::Greater
+        } else {
+            name1.cmp(name2)
+        }
+    });
+    
+    for symbol in symbols {
+        let SymbolName::InternalNamed(name) = &symbol.name else {
+            unreachable!();
+        };
+        
+        let initial_char = name.chars().next().unwrap();
+        let tail = symbol_name_gen.next();
+        
+        let mut result = String::with_capacity(tail.len() + 1);
+        result.push(initial_char);
+        result.push_str(tail);
+        
+        // println!("{name} {result}");
+        
+        symbol.name = SymbolName::InternalUnmangled(result);
+    }
+}
 
 pub fn link_section_debug(section: &Section, symbols: &IndexMap<String, Symbol>) -> Result<Vec<u8>> {
     let mut writer: Cursor<Vec<u8>> = Cursor::new(Vec::new());

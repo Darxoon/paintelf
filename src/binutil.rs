@@ -246,7 +246,7 @@ pub struct ElfWriteDomain {
     pub apply_debug_relocations: bool,
     
     // does it even perform deduplication for non-Strings categories?
-    prev_string_lengths: [usize; DataCategory::SIZE],
+    prev_string_length: usize,
     string_counts: [usize; DataCategory::SIZE],
 }
 
@@ -263,7 +263,7 @@ impl ElfWriteDomain {
             symbol_declarations: Vec::new(),
             relocations: Vec::new(),
             apply_debug_relocations,
-            prev_string_lengths: [0; _],
+            prev_string_length: 0,
             string_counts: [0; _],
         }
     }
@@ -280,11 +280,10 @@ impl ElfWriteDomain {
         let current_token = ctx.heap_token_at_current_pos()?;
         0u32.to_writer(ctx, self)?;
         
-        let category = DataCategory::Strings;
-        let heap_id = ctx.heap_id_of(&category);
+        let heap_id = ctx.heap_id_of(&DataCategory::Strings);
         
         // this 1000 string limit is really funny to me
-        let existing_token = if self.string_counts[category as usize] <= 1000 { 
+        let existing_token = if self.string_counts[DataCategory::Strings as usize] <= 1000 { 
             self.string_map.get(&(heap_id, Cow::Borrowed(value))).copied()
         } else {
             None
@@ -295,11 +294,11 @@ impl ElfWriteDomain {
             return Ok(());
         }
         
-        self.string_counts[category as usize] += 1;
-        let alignment = if self.prev_string_lengths[category as usize] > 2 || value.len() > 1 { 4 } else { 0 };
-        self.prev_string_lengths[category as usize] = value.len();
+        self.string_counts[DataCategory::Strings as usize] += 1;
+        let alignment = if self.prev_string_length > 2 || value.len() > 1 { 4 } else { 0 };
+        self.prev_string_length = value.len();
         
-        ctx.allocate_next_block_aligned(Some(category), alignment, false, |ctx| {
+        ctx.allocate_next_block_aligned(Some(DataCategory::Strings), alignment, false, |ctx| {
             let start_pos = ctx.position() as usize;
             let new_token = ctx.heap_token_at_current_pos()?;
             ctx.add_relocation(current_token, new_token)?;

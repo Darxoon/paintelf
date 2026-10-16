@@ -123,8 +123,7 @@ impl Symbol {
     }
 }
 
-pub const AUTO_SYMBOL_NAME_CHAR_COUNT: usize = 93;
-pub const AUTO_SYMBOL_NAME_CHARS: &[u8; AUTO_SYMBOL_NAME_CHAR_COUNT] = 
+pub const AUTO_SYMBOL_NAME_CHARS: &[u8] = 
     b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@$%^&*()_+-=[]{};\'\\:\"|,./<>?~`";
 
 #[derive(Default)]
@@ -168,7 +167,7 @@ impl SymbolNameGenerator {
         let value = &mut self.indices[index];
         *value += 1;
         
-        let overflow = *value >= AUTO_SYMBOL_NAME_CHAR_COUNT;
+        let overflow = *value >= AUTO_SYMBOL_NAME_CHARS.len();
         if overflow && index == 0 {
             // first character for some reason is never 'a'
             *value = 1;
