@@ -57,10 +57,7 @@ pub fn test_reserialize_from_content(input_file_path: &Path, output_file: bool, 
         let original_content = link_section_debug(original_section, &original.symbols)?;
         
         assert!(original_content == section.content, "Re-serialized section '{}' does not match", section.name);
-        
-        if !output_file {
-            println!("Section '{}' matches", section.name)
-        }
+        println!("[debug] Section '{}' matches", section.name);
         Ok(())
     };
     

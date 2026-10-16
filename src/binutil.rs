@@ -627,23 +627,24 @@ impl CanWriteSlice<DataCategory> for ElfWriteDomain {
         self.write_slice(ctx, values)
     }
     
-    fn write_slice_of_post<T: 'static, P, E>(
+    fn write_slice_of_post<T: 'static, P>(
         &mut self,
         ctx: &mut WriteCtx<DataCategory>,
         values: &[T],
         state: Self::PostState,
         write_content: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T) -> Result<P>,
-        write_content_post: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T, P) -> Result<E>,
-    ) -> Result<Vec<E>> {
+        write_content_post: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T, P) -> Result<()>,
+    ) -> Result<()> {
         let states = self.write_slice_post(ctx, values, state, WriteSliceArgs::default(), write_content)?;
-        self.write_slice_extra_post(ctx, values, states, write_content_post)
+        let _: Vec<()> = self.write_slice_extra_post(ctx, values, states, write_content_post)?;
+        Ok(())
     }
 }
 
-impl<P> CanWriteSliceNested<DataCategory, P> for ElfWriteDomain {
-    type ExtraState = Vec<P>;
+impl CanWriteSliceNested<DataCategory> for ElfWriteDomain {
+    type ExtraState<E> = Vec<E>;
     
-    fn write_slice_nested_of_post<T: 'static>(
+    fn write_slice_nested_of_post<T: 'static, P>(
         &mut self,
         ctx: &mut WriteCtx<DataCategory>,
         values: &[T],
@@ -655,7 +656,7 @@ impl<P> CanWriteSliceNested<DataCategory, P> for ElfWriteDomain {
         Ok(states)
     }
     
-    fn write_slice_of_extra_post<T: 'static, E>(
+    fn write_slice_of_nested_extra_post<T: 'static, P, E>(
         &mut self,
         ctx: &mut WriteCtx<DataCategory>,
         values: &[T],
@@ -679,17 +680,18 @@ impl<T: 'static> CanWriteSliceWithArgs<DataCategory, T, WriteSliceArgs> for ElfW
         self.write_slice(ctx, values)
     }
     
-    fn write_slice_args_of_post<P, E>(
+    fn write_slice_args_of_post<P>(
         &mut self,
         ctx: &mut WriteCtx<DataCategory>,
         values: &[T],
         state: Self::PostState,
         args: WriteSliceArgs,
         write_content: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T) -> Result<P>,
-        write_content_post: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T, P) -> Result<E>,
-    ) -> Result<Vec<E>> {
+        write_content_post: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T, P) -> Result<()>,
+    ) -> Result<()> {
         let states = self.write_slice_post(ctx, values, state, args, write_content)?;
-        self.write_slice_extra_post(ctx, values, states, write_content_post)
+        let _: Vec<()> = self.write_slice_extra_post(ctx, values, states, write_content_post)?;
+        Ok(())
     }
 }
 
@@ -706,15 +708,15 @@ impl<T: Default + 'static> CanWriteSliceWithArgs<DataCategory, T, WriteNullTermi
         self.write_null_terminated_slice(ctx, values, args)
     }
     
-    fn write_slice_args_of_post<P, E>(
+    fn write_slice_args_of_post<P>(
         &mut self,
         ctx: &mut WriteCtx<DataCategory>,
         values: &[T],
         state: HeapToken,
         args: WriteNullTerminatedSliceArgs,
         write_content: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T) -> Result<P>,
-        write_content_post: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T, P) -> Result<E>,
-    ) -> Result<Vec<E>> {
+        write_content_post: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T, P) -> Result<()>,
+    ) -> Result<()> {
         let states = self.write_null_terminated_slice_post(
             ctx,
             values,
@@ -722,14 +724,15 @@ impl<T: Default + 'static> CanWriteSliceWithArgs<DataCategory, T, WriteNullTermi
             state,
             write_content,
         )?;
-        self.write_null_terminated_slice_extra_post(ctx, values, states, write_content_post)
+        let _: Vec<()> = self.write_null_terminated_slice_extra_post(ctx, values, states, write_content_post)?;
+        Ok(())
     }
 }
 
-impl<T: Default + 'static, P> CanWriteSliceWithArgsNested<DataCategory, T, WriteNullTerminatedSliceArgs, P> for ElfWriteDomain {
-    type ExtraState = Vec<P>;
+impl<T: Default + 'static> CanWriteSliceWithArgsNested<DataCategory, T, WriteNullTerminatedSliceArgs> for ElfWriteDomain {
+    type ExtraState<E> = Vec<E>;
 
-    fn write_slice_args_nested_of_post(
+    fn write_slice_args_nested_of_post<P>(
         &mut self,
         ctx: &mut WriteCtx<DataCategory>,
         values: &[T],
@@ -737,12 +740,12 @@ impl<T: Default + 'static, P> CanWriteSliceWithArgsNested<DataCategory, T, Write
         state: Self::PostState,
         write_content: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T) -> Result<P>,
         _write_content_post: impl Fn(&mut Self, &mut WriteCtx<DataCategory>, &T, P) -> Result<()>,
-    ) -> Result<Self::ExtraState> {
+    ) -> Result<Self::ExtraState<P>> {
         let states = self.write_null_terminated_slice_post(ctx, values, args, state, write_content)?;
         Ok(states)
     }
     
-    fn write_slice_args_of_extra_post<E>(
+    fn write_slice_args_of_extra_post<P, E>(
         &mut self,
         ctx: &mut WriteCtx<DataCategory>,
         values: &[T],
