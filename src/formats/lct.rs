@@ -5,13 +5,13 @@ use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use vivibin::{
     CanWrite, CanWriteBox, CanWriteSlice, CanWriteSliceNested, CanWriteSliceWithArgs,
-    CanWriteSliceWithArgsNested, HeapToken, Readable, Reader, Writable, WritableExtraState,
-    WritableNested, WritableNestedUnboxed, WriteCtx, WriteSliceExt, WriteSliceNestedExt,
-    WriteSliceWithArgsExt,
+    CanWriteSliceWithArgsNested, HeapToken, Readable, Reader, Writable, WritableExtraState, WritableNested,
+    WritableNestedUnboxed, WriteCtx, WriteSliceExt, WriteSliceNestedExt, WriteSliceWithArgsExt,
 };
 
 use crate::{
-    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, WriteNullTerminatedSliceArgs},
+    SymbolDeclaration, SymbolName,
+    binutil::{DataCategory, ElfReadDomain, ElfWriteDomain, PutSymbol, WriteNullTerminatedSliceArgs},
     formats::FileData,
 };
 
@@ -88,6 +88,7 @@ pub struct AreaLct {
 pub trait AreaLct__Reqs: CanWrite<String>
     + CanWriteSliceWithArgsNested<MapLct, WriteNullTerminatedSliceArgs>
     + MapLct__Reqs
+    + PutSymbol
 {
 }
 
@@ -95,7 +96,8 @@ impl<D> AreaLct__Reqs for D
 where
     D: CanWrite<String>
         + CanWriteSliceWithArgsNested<MapLct, WriteNullTerminatedSliceArgs>
-        + MapLct__Reqs,
+        + MapLct__Reqs
+        + PutSymbol
 {
 }
 
@@ -145,14 +147,14 @@ impl<D: AreaLct__Reqs> WritableNestedUnboxed<D> for AreaLct {
         }, |domain, ctx, value, state| {
             value.to_writer_post(ctx, domain, state)
         })?;
-        Ok(AreaLct__UnboxedExtraState(maps))
+        Ok(AreaLct__UnboxedExtraState { maps })
     }
 }
 
 #[allow(non_camel_case_types)]
-pub struct AreaLct__UnboxedExtraState<D: AreaLct__Reqs>(
-    <D as CanWriteSliceWithArgsNested<MapLct, WriteNullTerminatedSliceArgs>>::ExtraState<HeapToken>,
-);
+pub struct AreaLct__UnboxedExtraState<D: AreaLct__Reqs> {
+    pub maps: <D as CanWriteSliceWithArgsNested<MapLct, WriteNullTerminatedSliceArgs>>::ExtraState<HeapToken>,
+}
 
 impl<D: AreaLct__Reqs> WritableExtraState<D, AreaLct> for AreaLct__UnboxedExtraState<D> {
     type OutExtraState = AreaLct__UnboxedExtraState2<D>;
@@ -161,7 +163,7 @@ impl<D: AreaLct__Reqs> WritableExtraState<D, AreaLct> for AreaLct__UnboxedExtraS
         let extra_states = domain.write_slice_args_of_extra_post(ctx, &value.maps, WriteNullTerminatedSliceArgs {
             symbol_name: None,
             write_length: true,
-        }, self.0, |domain, ctx, value, state| {
+        }, self.maps, |domain, ctx, value, state| {
             value.to_writer_nested_post(ctx, domain, state)
         })?;
         Ok(AreaLct__UnboxedExtraState2(extra_states))
@@ -211,10 +213,21 @@ impl<D: AreaLct__Reqs> WritableNested<D> for AreaLct {
     type ExtraState = AreaLct__PostState<D>;
 
     fn to_writer_nested_post(&self, ctx: &mut WriteCtx<D::Cat>, domain: &mut D, state: Self::PostState) -> Result<Self::ExtraState> {
+        // TODO: boilerplate shared with binutil
+        let start_pos = ctx.position() as usize;
         let token = ctx.heap_token_at_current_pos()?;
         ctx.add_relocation(state, token)?;
         
-        self.to_writer_unboxed(ctx, domain)
+        let extra_state = self.to_writer_unboxed(ctx, domain)?;
+        
+        let size = ctx.position() as usize - start_pos;
+        domain.put_symbol(SymbolDeclaration {
+            name: SymbolName::Internal('l'),
+            offset: token,
+            size: size as u32,
+        });
+        
+        Ok(extra_state)
     }
 }
 

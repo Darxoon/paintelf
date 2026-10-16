@@ -205,6 +205,10 @@ impl CanRead<Option<String>> for ElfReadDomain<'_> {
 }
 
 // serializing
+pub trait PutSymbol {
+    fn put_symbol(&mut self, symbol: SymbolDeclaration);
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DataCategory {
     Data,
@@ -268,18 +272,20 @@ impl ElfWriteDomain {
         }
     }
     
-    pub fn write_string_optional(&mut self, ctx: &mut WriteCtx<DataCategory>, value: Option<&str>) -> Result<()> {
-        if let Some(value) = value {
-            self.write_string(ctx, value)
-        } else {
-            0u32.to_writer(ctx, self)
-        }
-    }
-    
-    pub fn write_string(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &str) -> Result<()> {
+    pub fn write_string(&mut self, ctx: &mut WriteCtx<DataCategory>) -> Result<HeapToken> {
         let current_token = ctx.heap_token_at_current_pos()?;
         0u32.to_writer(ctx, self)?;
-        
+        Ok(current_token)
+    }
+    
+    pub fn write_string_optional_post(&mut self, ctx: &mut WriteCtx<DataCategory>, value: Option<&str>, current_token: HeapToken) -> Result<()> {
+        if let Some(value) = value {
+            self.write_string_post(ctx, value, current_token)?;
+        }
+        Ok(())
+    }
+    
+    pub fn write_string_post(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &str, current_token: HeapToken) -> Result<()> {
         let heap_id = ctx.heap_id_of(&DataCategory::Strings);
         
         // this 1000 string limit is really funny to me
@@ -320,12 +326,6 @@ impl ElfWriteDomain {
         })?;
         
         Ok(())
-    }
-    
-    pub fn write_string_inline(&mut self, ctx: &mut WriteCtx<DataCategory>) -> Result<HeapToken> {
-        let current_token = ctx.heap_token_at_current_pos()?;
-        0u32.to_writer(ctx, self)?;
-        Ok(current_token)
     }
     
     pub fn write_string_inline_post(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &str, base: HeapToken) -> Result<()> {
@@ -559,10 +559,6 @@ impl ElfWriteDomain {
         Ok(())
     }
     
-    pub fn put_symbol(&mut self, symbol: SymbolDeclaration) {
-        self.symbol_declarations.push(symbol);
-    }
-    
     pub fn put_relocation(&mut self, relocation: RelDeclaration) {
         self.relocations.push(relocation);
     }
@@ -757,18 +753,26 @@ impl<T: Default + 'static> CanWriteSliceWithArgsNested<T, WriteNullTerminatedSli
 }
 
 impl CanWrite<String> for ElfWriteDomain {
-    type PostState = ();
+    type PostState = HeapToken;
     
-    fn write(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &String) -> Result<()> {
-        self.write_string(ctx, value)
+    fn write(&mut self, ctx: &mut WriteCtx<DataCategory>, _: &String) -> Result<HeapToken> {
+        self.write_string(ctx)
+    }
+    
+    fn write_post(&mut self, ctx: &mut WriteCtx<Self::Cat>, value: &String, state: HeapToken) -> Result<()> {
+        self.write_string_post(ctx, value, state)
     }
 }
 
 impl CanWrite<Option<String>> for ElfWriteDomain {
-    type PostState = ();
+    type PostState = HeapToken;
     
-    fn write(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &Option<String>) -> Result<()> {
-        self.write_string_optional(ctx, value.as_deref())
+    fn write(&mut self, ctx: &mut WriteCtx<DataCategory>, _: &Option<String>) -> Result<HeapToken> {
+        self.write_string(ctx)
+    }
+    
+    fn write_post(&mut self, ctx: &mut WriteCtx<Self::Cat>, value: &Option<String>, state: HeapToken) -> Result<()> {
+        self.write_string_optional_post(ctx, value.as_deref(), state)
     }
 }
 
@@ -776,10 +780,16 @@ impl CanWriteWithArgs<String, InlineString> for ElfWriteDomain {
     type PostState = HeapToken;
     
     fn write_args(&mut self, ctx: &mut WriteCtx<DataCategory>, _value: &String, _: InlineString) -> Result<HeapToken> {
-        self.write_string_inline(ctx)
+        self.write_string(ctx)
     }
     
     fn write_args_post(&mut self, ctx: &mut WriteCtx<DataCategory>, value: &String, state: HeapToken, _: InlineString) -> Result<()> {
         self.write_string_inline_post(ctx, value, state)
+    }
+}
+
+impl PutSymbol for ElfWriteDomain {
+    fn put_symbol(&mut self, symbol: SymbolDeclaration) {
+        self.symbol_declarations.push(symbol);
     }
 }

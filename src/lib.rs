@@ -215,6 +215,7 @@ pub fn reassemble_elf_container(data: &FileData, apply_debug_relocations: bool) 
         &block_offsets,
         &mut symbol_indices,
         &mut symbol_declarations,
+        data.heap_category_type() == ElfCategoryType::Data,
     )?;
     let rela_rodata = write_relocations(&symbol_indices, &mut relocations)?;
     
@@ -282,10 +283,11 @@ pub fn write_symtab(
     block_offsets: &HashMap<HeapID, (usize, Vec<usize>)>,
     out_symbol_indices: &mut HashMap<usize, usize>,
     symbol_declarations: &mut Vec<SymbolDeclaration>,
+    has_data: bool,
 ) -> Result<(Vec<u8>, u32, Vec<u8>)> {
     // name symbols
-    name_unnamed_symbols(symbol_declarations);
-    name_internal_symbols(symbol_declarations);
+    name_internal_unnamed_symbols(symbol_declarations);
+    name_internal_named_symbols(symbol_declarations);
     
     // start serializing
     let mut writer = Cursor::new(Vec::new());
@@ -313,11 +315,24 @@ pub fn write_symtab(
     }, &mut writer)?;
     symbol_count += 3;
     
+    if has_data {
+        BinWrite::write(&SymbolHeader {
+            st_name: 0,
+            st_value: 0,
+            st_size: 0,
+            st_info: 3,
+            st_other: 0,
+            st_shndx: 2,
+        }, &mut writer)?;
+        symbol_count += 1;
+    }
+    
     // setup serialization of symbols
     let named_symbols: Vec<SymbolDeclaration> = symbol_declarations
         .extract_if(.., |symbol| !symbol.name.is_internal())
         .collect::<Vec<_>>();
     
+    // TODO: this breaks data_lct but commenting this out breaks mapid and maplink. investigate this
     symbol_declarations.sort_by_key(|symbol| symbol.offset.resolve(block_offsets));
     
     let mut strtab = Cursor::new(initial_content);
@@ -351,6 +366,7 @@ pub fn write_symtab(
     
     // serialize unnamed/automatically named/internally linked symbols
     for symbol in symbol_declarations.iter() {
+        println!("internal symbol {symbol:?}");
         // 0x1: STB_LOCAL | STT_OBJECT
         write_symbol(&mut writer, &mut symbol_count, symbol, 0x1)?;
     }
@@ -378,7 +394,7 @@ pub fn write_symtab(
     Ok((writer.into_inner(), last_local_symbol, strtab.into_inner()))
 }
 
-fn name_unnamed_symbols(symbol_declarations: &mut Vec<SymbolDeclaration>) {
+fn name_internal_unnamed_symbols(symbol_declarations: &mut Vec<SymbolDeclaration>) {
     let mut symbols: Vec<(char, &mut SymbolDeclaration)> = symbol_declarations.iter_mut()
         .flat_map(|symbol| match symbol.name {
                 SymbolName::Internal(initial_char) => Some((initial_char, symbol)),
@@ -410,7 +426,7 @@ fn name_unnamed_symbols(symbol_declarations: &mut Vec<SymbolDeclaration>) {
     }
 }
 
-fn name_internal_symbols(symbol_declarations: &mut Vec<SymbolDeclaration>) {
+fn name_internal_named_symbols(symbol_declarations: &mut Vec<SymbolDeclaration>) {
     let mut symbol_name_gen = SymbolNameGenerator::new();
     
     let mut symbols: Vec<&mut SymbolDeclaration> = symbol_declarations.iter_mut()
